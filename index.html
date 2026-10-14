@@ -127,6 +127,7 @@ dialog::backdrop { background: rgb(0 0 0 / .4) }
     <div class="actions">
       <button id="forget" type="button" hidden>Forget file</button>
       <button id="savecopy" type="button" hidden>Save for Drive</button>
+      <button id="drive-repick" type="button" hidden title="Choose the Bluecoins folder in Google Drive again">Pick Drive folder</button>
       <button id="drive-reload" type="button" hidden>Reload from Drive</button>
       <button id="upload" class="primary" type="button" hidden disabled>Upload to Drive</button>
     </div>
@@ -340,6 +341,9 @@ async function open(bytes, name, source) {
   dirty = 0;
   if (source !== 'drive') drive = null;
   if (source === 'local') try { await idb('readwrite', s => s.put({ bytes, name, savedAt: Date.now() }, 'last')); } catch {}
+  // Remember where the data came from: a Drive user must never be shown a stale local copy on the next visit.
+  if (source === 'drive') { store.set('bcw-source', 'drive'); try { await idb('readwrite', s => s.delete('last')); } catch {} }
+  if (source === 'local') store.set('bcw-source', 'local');
   $('#empty').hidden = true; $('#app').hidden = false;
   renderAll();
   loadRates();
@@ -435,9 +439,16 @@ function renderTransactions() {
   $('#more').hidden = list.length <= shown;
 }
 
+function updateMeta() {
+  const when = d => new Date(d).toLocaleString(undefined, { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
+  $('#meta').textContent = drive
+    ? `${drive.db.name} · Google Drive, changed ${when(drive.db.modifiedTime)} · ${D.list.length.toLocaleString()} transactions`
+    : `${D.name} · file on this device · ${D.list.length.toLocaleString()} transactions`;
+}
+
 function renderAll() {
   const latest = D.list[0]?.date.slice(0, 10) || '—';
-  $('#meta').textContent = `${D.name} · ${D.list.length.toLocaleString()} transactions · latest ${latest}`;
+  updateMeta();
   const rates = [...new Set(D.accounts.filter(a => a.cur !== D.base).map(a => a.cur))]
     .map(c => `${c} ${D.accounts.find(a => a.cur === c).rate.toFixed(2)}`).join(', ');
   $('#foot').textContent = `Account totals in ${D.base} use the rates saved in Bluecoins (1 ${D.base} = ${rates}). Reports use the rate saved with each transaction. Scheduled reminders and deleted transactions are left out.`;
@@ -644,6 +655,7 @@ function updateSaveUI() {
   $('#upload').disabled = !dirty;
   $('#upload').textContent = dirty ? `Upload to Drive (${dirty})` : 'Uploaded';
   $('#drive-reload').hidden = !(has && drive);
+  $('#drive-repick').hidden = !(has && drive);
   $('#savecopy').hidden = !has || !!drive;
   $('#forget').hidden = !has || !!drive;
 }
@@ -762,11 +774,12 @@ function pickFiles() {
   });
 }
 
-async function driveOpen() {
+async function driveOpen(repick = false) {
   if (dirty && !confirmDiscard()) return;
   try {
     await getToken('open');
     notice('Looking for your Bluecoins data in Google Drive…');
+    if (repick === true) { store.set('bcw-folder', 'null'); await pickFiles(); }
     let files = await findSyncFiles();
     if (!files) {
       notice('Pick the Google Drive folder where Bluecoins keeps bluecoins.fydb and tracker_file.');
@@ -801,6 +814,7 @@ async function driveUpload() {
     const up = await (await gfetch(`${UPLOAD}/${drive.db.id}?uploadType=media&fields=modifiedTime`, {
       method: 'PATCH', headers: { 'Content-Type': drive.db.mimeType || 'application/octet-stream' }, body: D.db.export() })).json();
     drive.db.modifiedTime = up.modifiedTime;
+    updateMeta();
     await gfetch(`${UPLOAD}/${drive.tracker.id}?uploadType=media`, {
       method: 'PATCH', headers: { 'Content-Type': drive.tracker.mimeType || 'application/octet-stream' }, body: trackerText });
     dirty = 0;
@@ -843,7 +857,8 @@ $('#ed-del').addEventListener('click', e => {
 $('#savecopy').addEventListener('click', saveCopy);
 $('#upload').addEventListener('click', driveUpload);
 $('#drive-open').addEventListener('click', driveOpen);
-$('#drive-reload').addEventListener('click', driveOpen);
+$('#drive-reload').addEventListener('click', () => driveOpen());
+$('#drive-repick').addEventListener('click', () => driveOpen(true));
 $('#origin').textContent = location.origin;
 $('#redirect').textContent = redirectUri();
 $('#client-id').value = store.get('bcw-client-id') || DEFAULT_CLIENT_ID;
@@ -859,10 +874,14 @@ window.addEventListener('beforeunload', e => { if (dirty) { e.preventDefault(); 
 for (const [ev, on] of [['dragover', true], ['dragleave', false], ['drop', false]])
   document.addEventListener(ev, e => { e.preventDefault(); $('#empty').classList.toggle('over', on); if (ev === 'drop') openFile(e.dataTransfer.files[0]); });
 
-// reopen the last local file this browser saw
+// Startup: Drive users get fresh data from Drive (automatically while this tab is signed in); local-file users get their last file.
 (async () => {
   const t = store.get('bcw-tab'); if (t) showTab(t);
   if (/[#&](access_token|error)=/.test(location.hash)) return finishSignIn();
+  if (store.get('bcw-source') === 'drive') {
+    if (token && Date.now() < tokenExp - 60000) return driveOpen();
+    return notice('Choose Open from Google Drive to load your latest data.');
+  }
   try { const last = await idb('readonly', s => s.get('last')); if (last && !D) open(last.bytes, last.name, 'local'); } catch {}
 })();
 </script>
