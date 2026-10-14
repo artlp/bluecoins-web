@@ -53,7 +53,7 @@
   const tipAttr = html => ` data-tip="${esc(html)}" tabindex="0"`;
 
   // ---------- data ----------
-  const child = t => t.catName.includes(' › ') ? t.catName.split(' › ')[1] : t.catName || 'Other';
+  const child = t => t.child;
   function base() {
     return D.list.filter(t => !t.void && (t.type === 3 || t.type === 4)
       && (!S.acc || String(t.acc) === S.acc) && (!S.label || t.labels.includes(S.label)));
@@ -205,7 +205,7 @@
     const body = rows.length ? `<div class="r-bars">${rows.map(([k, v]) => {
       const o = old.get(k) || 0;
       const tip = `<b>${esc(k)}</b><br>${rangeLabel(r)}: ${m0(v)} (${pct(v / total)})${prev ? `<br>${rangeLabel(prev)}: ${m0(o)}` : ''}`;
-      return `<button type="button" class="r-bar-row" ${drill ? `data-search="${esc(k)}"` : `data-drill="${esc(k)}"`}${tipAttr(tip).replace(' tabindex="0"', '')}>
+      return `<button type="button" class="r-bar-row" ${drill ? `data-parent="${esc(drill)}" data-child="${esc(k)}"` : `data-drill="${esc(k)}"`}${tipAttr(tip).replace(' tabindex="0"', '')}>
         <span class="r-bar-name">${esc(k)}</span>
         <span class="r-bar-val num">${m0(v)} <span class="muted">${pct(v / total)}</span></span>
         <span class="r-bar-delta">${prev ? deltaHtml(v, o, kind === 4) : ''}</span>
@@ -232,7 +232,8 @@
     // Each row is shaded against its own busiest month: one huge group (a flat purchase) would otherwise wash out every other row.
     const cell = (v, k, m, rowMax) => {
       const s = v > 0.004 ? Math.max(0.15, v / rowMax) : 0;
-      return `<td class="hm"${tipAttr(`<b>${esc(k)}</b><br>${monthName(m)}: ${m0(v || 0)}`)} style="--s:${Math.round(s * 100)}%">${v > 0.004 ? '' : '·'}</td>`;
+      const open = v > 0.004 && k !== 'Other' ? ` data-parent="${esc(k)}" data-month="${m}"` : ''; // "Other" folds several groups, so it has no single filter
+      return `<td class="hm${open ? ' link' : ''}"${open}${tipAttr(`<b>${esc(k)}</b><br>${monthName(m)}: ${m0(v || 0)}${open ? '<br>Click to see transactions' : ''}`)} style="--s:${Math.round(s * 100)}%">${v > 0.004 ? '' : '·'}</td>`;
     };
     const table = `<div class="r-scroll"><table class="r-heat"><thead><tr><th></th>${ms.map(m => `<th>${esc(monthName(m, 'short'))}</th>`).join('')}<th>Total</th></tr></thead><tbody>
       ${cats.map(([k, row, tot]) => { const rowMax = Math.max(...row.values()); return `<tr><th scope="row">${esc(k)}</th>${ms.map(m => cell(row.get(m), k, m, rowMax)).join('')}<td class="num">${m0(tot)}</td></tr>`; }).join('')}</tbody></table></div>
@@ -388,10 +389,11 @@
   }
   const hideTip = () => { if (tip) tip.hidden = true; };
 
-  function goToTransactions(search, r) {
-    $('#q').value = search; $('#f-type').value = ''; $('#f-acc').value = S.acc;
-    $('#f-month').value = r && r[0] === r[1] ? r[0] : '';
-    renderTransactions(); showTab('transactions'); hideTip();
+  // Open the Transactions tab filtered to what was clicked, within the report's period (the account filter carries over).
+  function goToTransactions(opts, r) {
+    hideTip();
+    const period = !r ? {} : r[0] === r[1] ? { month: r[0] } : { from: r[0], to: r[1] };
+    showTransactions({ acc: S.acc, type: String(S.kind), ...period, ...opts });
   }
 
   document.addEventListener('DOMContentLoaded', () => {
@@ -406,19 +408,21 @@
       S.drill = null; persist(); renderReports();
     });
     root.addEventListener('click', e => {
-      const t = e.target.closest('button, tr[data-search], tr[data-year]'); if (!t) return;
+      const t = e.target.closest('button, tr[data-search], tr[data-year], td[data-month]'); if (!t) return;
       const rr = ranges();
       if (t.dataset.kind) { S.kind = +t.dataset.kind; S.drill = null; persist(); renderReports(); }
       else if (t.dataset.drill) { S.drill = t.dataset.drill; renderReports(); }
       else if ('undrill' in t.dataset) { S.drill = null; renderReports(); }
-      else if (t.dataset.search) goToTransactions(t.dataset.search, rr.r);
+      else if (t.dataset.month) goToTransactions({ parent: t.dataset.parent, month: t.dataset.month });
+      else if (t.dataset.child) goToTransactions({ parent: t.dataset.parent, child: t.dataset.child }, rr.r);
+      else if (t.dataset.search) goToTransactions({ search: t.dataset.search }, rr.r);
       else if (t.dataset.label) { S.label = t.dataset.label; renderReports(); }
       else if (t.dataset.acc) { S.acc = t.dataset.acc; renderReports(); }
       else if (t.dataset.year) { S.period = 'custom'; S.from = `${t.dataset.year}-01`; S.to = `${t.dataset.year}-12`; persist(); renderReports(); scrollTo({ top: 0 }); }
       else if (t.dataset.id) { hideTip(); openEditor(D.byId[t.dataset.id]); }
       else if (t.id === 'r-reset') { S.acc = ''; S.label = ''; renderReports(); }
     });
-    root.addEventListener('keydown', e => { if (e.key === 'Enter' && e.target.matches('tr[data-search], tr[data-year]')) e.target.click(); });
+    root.addEventListener('keydown', e => { if (e.key === 'Enter' && e.target.matches('tr[data-search], tr[data-year], td[data-month]')) e.target.click(); });
     root.addEventListener('pointermove', e => {
       const hit = e.target.closest('[data-line]');
       if (hit) {

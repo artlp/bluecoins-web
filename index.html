@@ -5,7 +5,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Golos+Text:wght@400;500;600&family=Unbounded:wght@500;700&display=swap">
-<link rel="stylesheet" href="reports.css?v=3">
+<link rel="stylesheet" href="reports.css?v=4">
 <style>
 /* Layout: one column ledger, sticky top bar, three tabs (accounts, transactions, reports), modal editor */
 :root {
@@ -77,6 +77,7 @@ select, input, textarea { background: var(--surface); border: 1px solid var(--li
 
 .filters { display: grid; grid-template-columns: 2fr 1.4fr 1fr 1fr auto; gap: 8px; margin-bottom: 12px }
 @media (max-width: 720px) { .filters { grid-template-columns: 1fr 1fr } .filters input[type=search] { grid-column: 1 / -1 } }
+.filter-chip { padding: 1px 10px; border-radius: 999px; border: 0; background: var(--accent); color: var(--surface); font-size: .85rem; margin-right: 6px }
 .listbar { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 8px; font-size: .9rem }
 .day { font-size: .8rem; color: var(--muted); padding: 14px 4px 4px; border-bottom: 1px solid var(--line) }
 .tx { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 12px; align-items: start; padding: 10px 4px }
@@ -232,7 +233,7 @@ dialog::backdrop { background: rgb(0 0 0 / .4) }
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.8.0/sql-asm.js"></script>
 <script src="https://apis.google.com/js/api.js"></script>
-<script src="reports.js?v=3"></script><!-- bump ?v= when reports change, so browsers don't keep the old copy -->
+<script src="reports.js?v=5"></script><!-- bump ?v= when reports change, so browsers don't keep the old copy -->
 <script>
 const $ = s => document.querySelector(s);
 const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -318,6 +319,7 @@ function derive() {
     t.labels = labels[t.id] || [];
     t.catName = c ? (c.parent && c.parent !== c.name ? c.parent + ' › ' + c.name : c.name) : '';
     t.parent = c ? c.parent || c.name : 'Other';
+    t.child = c ? c.name : 'Other';
     t.text = [t.item, t.notes, t.catName, ...t.labels].join(' ').toLowerCase();
   }
 }
@@ -377,9 +379,26 @@ function renderAccounts() {
 }
 
 // ---------- transactions ----------
+// Filter set from Reports, shown as one removable chip: exact category group/category and/or a month range.
+let catFilter = null;
+function showTransactions({ month = '', type = '', acc = '', search = '', parent = null, child = null, from = null, to = null } = {}) {
+  $('#q').value = search; $('#f-type').value = type; $('#f-acc').value = acc; $('#f-month').value = month;
+  catFilter = parent || from ? { parent, child, from, to } : null;
+  shown = 150; renderTransactions(); showTab('transactions'); scrollTo({ top: 0 });
+}
+function catFilterLabel(f) {
+  const cat = f.parent ? esc(f.parent) + (f.child && f.child !== f.parent ? ' › ' + esc(f.child) : '') : '';
+  const mon = m => new Date(m + '-01T00:00:00').toLocaleDateString(undefined, { month: 'short', year: 'numeric' });
+  return [cat, f.from ? `${mon(f.from)} – ${mon(f.to)}` : ''].filter(Boolean).join(' · ');
+}
+
 function filtered() {
   const q = $('#q').value.trim().toLowerCase(), acc = $('#f-acc').value, type = $('#f-type').value, m = $('#f-month').value;
   return D.list.filter(t => {
+    if (catFilter) {
+      if (catFilter.parent && (t.parent !== catFilter.parent || catFilter.child && t.child !== catFilter.child)) return false;
+      if (catFilter.from) { const tm = t.date.slice(0, 7); if (tm < catFilter.from || tm > catFilter.to) return false; }
+    }
     if (acc) { if (String(t.acc) !== acc) return false; }
     else if (t.type === 5 && t.ref !== 1) return false; // a transfer is two rows; show the sending side once
     if (type && String(t.type) !== type) return false;
@@ -391,7 +410,8 @@ function filtered() {
 function renderTransactions() {
   const list = filtered(), acc = $('#f-acc').value;
   const sum = list.filter(t => (acc || t.type !== 5) && !t.void).reduce((s, t) => s + t.amount, 0);
-  $('#summary').innerHTML = `${list.length.toLocaleString()} transactions · net <span class="num ${cls(sum)}">${money(sum, D.base)}</span>`;
+  $('#summary').innerHTML = (catFilter ? `<button type="button" class="filter-chip" id="cat-clear" title="Remove this filter">${catFilterLabel(catFilter)} ×</button> ` : '')
+    + `${list.length.toLocaleString()} transactions · net <span class="num ${cls(sum)}">${money(sum, D.base)}</span>`;
   let day = '', html = '';
   for (const t of list.slice(0, shown)) {
     const d = t.date.slice(0, 10);
@@ -795,11 +815,11 @@ document.querySelector('.tabs').addEventListener('click', e => { const b = e.tar
 $('#show-closed').addEventListener('change', renderAccounts);
 $('#groups').addEventListener('click', e => {
   const b = e.target.closest('[data-acc]'); if (!b) return;
-  $('#f-acc').value = b.dataset.acc; $('#q').value = ''; $('#f-type').value = ''; $('#f-month').value = '';
-  shown = 150; renderTransactions(); showTab('transactions');
+  showTransactions({ acc: b.dataset.acc });
 });
 for (const id of ['#q', '#f-acc', '#f-type', '#f-month']) $(id).addEventListener('input', () => { shown = 150; renderTransactions(); });
-$('#clear').addEventListener('click', () => { for (const id of ['#q', '#f-acc', '#f-type', '#f-month']) $(id).value = ''; shown = 150; renderTransactions(); });
+$('#clear').addEventListener('click', () => { for (const id of ['#q', '#f-acc', '#f-type', '#f-month']) $(id).value = ''; catFilter = null; shown = 150; renderTransactions(); });
+$('#summary').addEventListener('click', e => { if (e.target.closest('#cat-clear')) { catFilter = null; shown = 150; renderTransactions(); } });
 $('#more').addEventListener('click', () => { shown += 300; renderTransactions(); });
 $('#list').addEventListener('click', e => { const b = e.target.closest('[data-id]'); if (b) openEditor(D.byId[b.dataset.id]); });
 $('#add').addEventListener('click', () => openEditor(null));

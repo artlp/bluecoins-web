@@ -77,6 +77,7 @@
 .r-heat td.hm { width: 44px; min-width: 34px; height: 26px; border-radius: 4px; text-align: center; color: var(--muted);
   background: color-mix(in oklab, var(--accent) var(--s), var(--bg)); cursor: default }
 .r-heat td.num { padding-left: 8px; color: var(--muted) }
+.r-heat td.hm.link { cursor: pointer }
 .r-heat td.hm:hover, .r-heat td.hm:focus { outline: 2px solid var(--ink); outline-offset: -1px }
 .r-scale { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; font-size: .75rem; color: var(--muted) }
 .r-scale i { width: 16px; height: 12px; border-radius: 3px; background: color-mix(in oklab, var(--accent) var(--s), var(--bg)) }
