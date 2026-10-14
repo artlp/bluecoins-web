@@ -10,15 +10,16 @@
 :root {
   --bg: #f3f6f7; --surface: #ffffff; --ink: #13212a; --muted: #5d6c76; --line: #dbe3e7;
   --accent: #0a6a85; --accent-soft: #e1eff3; --pos: #1d7648; --neg: #b03636;
+  --tag-s: 55%; --tag-bg: 91%; --tag-fg: 28%;
   --display: "Unbounded", "Segoe UI", system-ui, sans-serif;
   --body: "Golos Text", "Segoe UI", system-ui, -apple-system, sans-serif;
 }
 @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
   --bg: #0e1519; --surface: #151f25; --ink: #e2eaee; --muted: #8d9ea8; --line: #25333b;
-  --accent: #56b6d1; --accent-soft: #173039; --pos: #62c48f; --neg: #e57b7b; color-scheme: dark } }
+  --accent: #56b6d1; --accent-soft: #173039; --pos: #62c48f; --neg: #e57b7b; --tag-bg: 22%; --tag-fg: 80%; color-scheme: dark } }
 :root[data-theme="dark"] {
   --bg: #0e1519; --surface: #151f25; --ink: #e2eaee; --muted: #8d9ea8; --line: #25333b;
-  --accent: #56b6d1; --accent-soft: #173039; --pos: #62c48f; --neg: #e57b7b; color-scheme: dark }
+  --accent: #56b6d1; --accent-soft: #173039; --pos: #62c48f; --neg: #e57b7b; --tag-bg: 22%; --tag-fg: 80%; color-scheme: dark }
 
 * { box-sizing: border-box }
 [hidden] { display: none !important }
@@ -77,13 +78,20 @@ select, input, textarea { background: var(--surface); border: 1px solid var(--li
 @media (max-width: 720px) { .filters { grid-template-columns: 1fr 1fr } .filters input[type=search] { grid-column: 1 / -1 } }
 .listbar { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 8px; font-size: .9rem }
 .day { font-size: .8rem; color: var(--muted); padding: 14px 4px 4px; border-bottom: 1px solid var(--line) }
-.tx { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 2px 12px; padding: 8px 4px }
-.tx .item { font-weight: 500; overflow-wrap: anywhere }
-.tx .sub { grid-column: 1; font-size: .85rem; color: var(--muted); display: flex; flex-wrap: wrap; gap: 4px 10px; min-width: 0 }
-.tx .note { grid-column: 1 / -1; font-size: .85rem; color: var(--muted); white-space: pre-line; overflow-wrap: anywhere }
-.tx .amt { text-align: right; font-weight: 500 }
-.tx .base { grid-column: 2; grid-row: 2; text-align: right; font-size: .8rem }
-.chip { background: var(--accent-soft); color: var(--accent); border-radius: 999px; padding: 0 8px; font-size: .78rem }
+.tx { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 12px; align-items: start; padding: 10px 4px }
+.tx.void { opacity: .55 }
+.tx-main { display: grid; gap: 4px; min-width: 0 }
+.tx .item { font-weight: 600; overflow-wrap: anywhere }
+.tx .meta { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 8px; font-size: .85rem; color: var(--muted); min-width: 0 }
+.tx .meta .cat { color: var(--ink) }
+.tx .kind { font-size: .68rem; text-transform: uppercase; letter-spacing: .06em; border: 1px solid var(--line); border-radius: 4px; padding: 0 5px }
+.tags { display: flex; flex-wrap: wrap; gap: 4px }
+.tag { font-size: .75rem; line-height: 1.5; padding: 0 8px; border-radius: 999px; background: hsl(var(--h) var(--tag-s) var(--tag-bg)); color: hsl(var(--h) var(--tag-s) var(--tag-fg)) }
+.tx .note { font-size: .85rem; color: var(--muted); white-space: pre-line; overflow-wrap: anywhere }
+.tx-amt { display: grid; justify-items: end; gap: 4px; text-align: right }
+.tx .amt { font-size: 1.05rem; font-weight: 600 }
+.fx { display: inline-flex; align-items: center; gap: 6px; font-size: .8rem; color: var(--muted) }
+.code { font-size: .66rem; font-weight: 600; letter-spacing: .06em; line-height: 1; padding: 3px 5px; border-radius: 4px; background: var(--accent-soft); color: var(--accent) }
 .more { margin: 16px auto; display: block }
 
 .cards { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin-block: 16px 24px }
@@ -115,8 +123,8 @@ dialog::backdrop { background: rgb(0 0 0 / .4) }
 .ed .two { display: grid; grid-template-columns: 1fr 1fr; gap: 12px }
 @media (max-width: 480px) { .ed .two { grid-template-columns: 1fr } }
 .seg { display: flex; border: 1px solid var(--line); border-radius: 8px; overflow: hidden }
-.seg label { flex: 1; display: block; text-align: center; padding: 6px; cursor: pointer; color: var(--ink); font-size: .9rem }
-.seg input { position: absolute; opacity: 0 }
+.seg label { flex: 1; display: block; position: relative; text-align: center; padding: 6px; cursor: pointer; color: var(--ink); font-size: .9rem }
+.seg input { position: absolute; inset: 0; width: 100%; height: 100%; margin: 0; opacity: 0; cursor: pointer }
 .seg label:has(input:checked) { background: var(--accent); color: var(--surface) }
 .seg label:has(input:disabled) { opacity: .4; cursor: default }
 .seg label:has(input:focus-visible) { outline: 2px solid var(--accent); outline-offset: -2px }
@@ -278,11 +286,12 @@ const store = { get: k => { try { return localStorage.getItem(k) } catch { retur
 const fmts = {};
 function money(n, cur) {
   if (!fmts[cur]) {
-    try { fmts[cur] = new Intl.NumberFormat(undefined, { style: 'currency', currency: cur, minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
+    try { fmts[cur] = new Intl.NumberFormat(undefined, { style: 'currency', currency: cur, currencyDisplay: 'narrowSymbol', minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
     catch { fmts[cur] = { format: v => v.toFixed(2) + ' ' + cur }; }
   }
   return fmts[cur].format(Math.abs(n) < 0.005 ? 0 : n);
 }
+const hue = s => [...s].reduce((h, c) => (h * 31 + c.codePointAt(0)) % 360, 7); // stable color per tag
 const cls = n => n > 0.004 ? 'pos' : n < -0.004 ? 'neg' : '';
 const monthName = (ym, style = 'long') => new Date(ym + '-01T00:00:00').toLocaleDateString(undefined, { month: style, year: style === 'long' ? 'numeric' : '2-digit' });
 const num = s => parseFloat(String(s).replace(/\s/g, '').replace(',', '.'));
@@ -412,12 +421,17 @@ function renderTransactions() {
     if (d !== day) { day = d; html += `<div class="day">${new Date(d + 'T00:00:00').toLocaleDateString(undefined, { weekday: 'short', day: 'numeric', month: 'long', year: 'numeric' })}</div>`; }
     const a = D.acc[t.acc], other = D.acc[t.pair];
     const where = t.type === 5 ? (t.ref === 1 ? `${esc(a.name)} → ${esc(other?.name)}` : `${esc(other?.name)} → ${esc(a.name)}`) : esc(a.name);
-    html += `<button type="button" class="tx" data-id="${t.id}">
-      <span class="item">${esc(t.item || t.catName || '—')}</span>
-      <span class="num amt ${cls(t.native)}">${money(t.native, t.tc)}</span>
-      <span class="sub">${t.void ? '<span class="chip">Not counted</span>' : ''}${t.type === 5 ? '<span class="chip">Transfer</span>' : t.catName ? `<span class="chip">${esc(t.catName)}</span>` : ''}<span>${where}</span>${t.labels.map(l => `<span>#${esc(l)}</span>`).join('')}</span>
-      ${t.tc !== D.base ? `<span class="num base muted">${money(t.amount, D.base)}</span>` : ''}
-      ${t.notes ? `<span class="note">${esc(t.notes)}</span>` : ''}
+    html += `<button type="button" class="tx${t.void ? ' void' : ''}" data-id="${t.id}">
+      <span class="tx-main">
+        <span class="item">${esc(t.item || t.catName || '—')}</span>
+        <span class="meta">${t.type === 5 ? '<span class="kind">Transfer</span>' : t.catName ? `<span class="cat">${esc(t.catName)}</span>` : ''}<span>${where}</span>${t.void ? '<span class="kind">Not counted</span>' : ''}</span>
+        ${t.labels.length ? `<span class="tags">${t.labels.map(l => `<span class="tag" style="--h:${hue(l)}">${esc(l)}</span>`).join('')}</span>` : ''}
+        ${t.notes ? `<span class="note">${esc(t.notes)}</span>` : ''}
+      </span>
+      <span class="tx-amt">
+        <span class="num amt ${cls(t.native)}">${money(t.native, t.tc)}</span>
+        ${t.tc !== D.base ? `<span class="fx"><span class="code">${esc(t.tc)}</span><span class="num">${money(t.amount, D.base)}</span></span>` : ''}
+      </span>
     </button>`;
   }
   $('#list').innerHTML = html || '<p class="muted">No transactions match these filters.</p>';
@@ -709,10 +723,13 @@ async function gfetch(url, opt = {}) {
 const gq = q => `${API}?q=${encodeURIComponent(q + ' and trashed = false')}&orderBy=modifiedTime desc&fields=files(id,name,modifiedTime,mimeType,parents)&pageSize=10`;
 
 // With the drive.file scope the app only sees files picked once in Google's picker (plus backups it created itself).
+// Bluecoins may replace its files on every phone sync (new file ids), so picking the folder is preferred: the choice is remembered.
+const pickedFolder = () => { try { return JSON.parse(store.get('bcw-folder') || 'null'); } catch { return null; } };
 async function findSyncFiles() {
-  const tracker = (await (await gfetch(gq("name = 'tracker_file'"))).json()).files[0];
+  const folder = pickedFolder(), inFolder = folder ? `'${folder}' in parents and ` : '';
+  const tracker = (await (await gfetch(gq(inFolder + "name = 'tracker_file'"))).json()).files[0];
   if (!tracker) return null;
-  const dbs = (await (await gfetch(gq("name contains '.fydb' and not name contains 'bluecoins-web-backup'"))).json()).files;
+  const dbs = (await (await gfetch(gq(inFolder + "name contains '.fydb' and not name contains 'bluecoins-web-backup'"))).json()).files;
   const db = dbs.find(f => f.parents?.[0] && f.parents[0] === tracker.parents?.[0]) || dbs[0];
   return db ? { db, tracker } : null;
 }
@@ -722,13 +739,17 @@ function pickFiles() {
     if (!window.gapi) return rej(new Error('The Google file picker did not load. An ad blocker may be blocking apis.google.com.'));
     if (!PICKER_API_KEY) return rej(new Error('The Google file picker is not set up yet (missing API key).'));
     gapi.load('picker', () => {
-      const view = new google.picker.DocsView(google.picker.ViewId.DOCS).setIncludeFolders(true).setMode(google.picker.DocsViewMode.LIST);
+      const view = new google.picker.DocsView(google.picker.ViewId.DOCS).setIncludeFolders(true).setSelectFolderEnabled(true).setMode(google.picker.DocsViewMode.LIST);
       new google.picker.PickerBuilder()
-        .setTitle('Select bluecoins.fydb and tracker_file (hold Ctrl to pick both)')
+        .setTitle('Select the folder that holds bluecoins.fydb and tracker_file')
         .addView(view).enableFeature(google.picker.Feature.MULTISELECT_ENABLED)
         .setOAuthToken(token).setDeveloperKey(PICKER_API_KEY).setAppId(APP_ID)
         .setCallback(d => {
-          if (d.action === google.picker.Action.PICKED) res();
+          if (d.action === google.picker.Action.PICKED) {
+            const folder = d.docs.find(x => x.mimeType === 'application/vnd.google-apps.folder');
+            store.set('bcw-folder', JSON.stringify(folder ? folder.id : null));
+            res();
+          }
           else if (d.action === google.picker.Action.CANCEL) rej(new Error('No files were picked. Choose Open from Google Drive and pick bluecoins.fydb and tracker_file.'));
         })
         .build().setVisible(true);
@@ -743,9 +764,13 @@ async function driveOpen() {
     notice('Looking for your Bluecoins data in Google Drive…');
     let files = await findSyncFiles();
     if (!files) {
-      notice('Pick bluecoins.fydb and tracker_file from your Bluecoins folder. You only need to do this once.');
+      notice('Pick the Google Drive folder where Bluecoins keeps bluecoins.fydb and tracker_file.');
       await pickFiles();
       files = await findSyncFiles();
+    }
+    if (!files && pickedFolder()) {
+      store.set('bcw-folder', 'null');
+      throw new Error('Google gave access to the folder but not to the files in it. Choose Open from Google Drive again and pick the two files, bluecoins.fydb and tracker_file, instead of the folder.');
     }
     if (!files) throw new Error('Both files are needed: pick bluecoins.fydb and tracker_file from the same Bluecoins folder.');
     const { db, tracker } = files;
