@@ -216,12 +216,19 @@
     return card(`${kind === 4 ? 'Income' : 'Expenses'} by category`, crumb + body + legend, '', 'r-wide');
   }
 
-  // Category groups x last 12 months, one hue light-to-dark (sequential).
+  // Category groups x the selected period, one hue light-to-dark (sequential).
+  // Columns follow the period: days for one month, months up to two years, years beyond that.
   function heatmap(list, r) {
-    const k = K(), ms = monthsOf(addM(r[1], -11), r[1]);
-    const sel = list.filter(t => t.type === k.type && t.date.slice(0, 7) >= ms[0] && t.date.slice(0, 7) <= ms[11]);
+    const k = K(), ms = monthsOf(r[0], r[1]);
+    const unit = ms.length === 1 ? 'day' : ms.length <= 24 ? 'month' : 'year';
+    const len = { day: 10, month: 7, year: 4 }[unit]; // a column key is the first `len` characters of the date
+    const cols = unit === 'month' ? ms : unit === 'year' ? [...new Set(ms.map(m => m.slice(0, 4)))]
+      : Array.from({ length: +lastDay(ms[0]).slice(8) }, (_, i) => `${ms[0]}-${pad(i + 1)}`);
+    const colName = c => unit === 'day' ? longDate(c) : unit === 'month' ? monthName(c) : c;
+    const colHead = c => unit === 'day' ? String(+c.slice(8)) : unit === 'month' ? monthName(c, 'short') : c;
+    const sel = list.filter(t => t.type === k.type && inRange(t, r));
     const byCat = new Map();
-    for (const t of sel) { const row = byCat.get(t.parent) || new Map(); const m = t.date.slice(0, 7); row.set(m, (row.get(m) || 0) + k.val(t)); byCat.set(t.parent, row); }
+    for (const t of sel) { const row = byCat.get(t.parent) || new Map(); const m = t.date.slice(0, len); row.set(m, (row.get(m) || 0) + k.val(t)); byCat.set(t.parent, row); }
     let cats = [...byCat].map(([k, row]) => [k, row, [...row.values()].reduce((s, v) => s + v, 0)]).filter(c => c[2] > 0.004).sort((a, b) => b[2] - a[2]);
     if (!cats.length) return card(`${k.noun} heatmap`, empty, '', 'r-wide');
     if (cats.length > 12) {
@@ -229,16 +236,16 @@
       for (const [, row] of cats.slice(11)) for (const [m, v] of row) other.set(m, (other.get(m) || 0) + v);
       cats = [...cats.slice(0, 11), ['Other', other, [...other.values()].reduce((s, v) => s + v, 0)]];
     }
-    // Each row is shaded against its own busiest month: one huge group (a flat purchase) would otherwise wash out every other row.
-    const cell = (v, k, m, rowMax) => {
+    // Each row is shaded against its own busiest column: one huge group (a flat purchase) would otherwise wash out every other row.
+    const cell = (v, k, c, rowMax) => {
       const s = v > 0.004 ? Math.max(0.15, v / rowMax) : 0;
-      const open = v > 0.004 && k !== 'Other' ? ` data-parent="${esc(k)}" data-month="${m}"` : ''; // "Other" folds several groups, so it has no single filter
-      return `<td class="hm${open ? ' link' : ''}"${open}${tipAttr(`<b>${esc(k)}</b><br>${monthName(m)}: ${m0(v || 0)}${open ? '<br>Click to see transactions' : ''}`)} style="--s:${Math.round(s * 100)}%">${v > 0.004 ? '' : '·'}</td>`;
+      const open = v > 0.004 && k !== 'Other' ? ` data-parent="${esc(k)}" data-cell="${c}"` : ''; // "Other" folds several groups, so it has no single filter
+      return `<td class="hm${open ? ' link' : ''}"${open}${tipAttr(`<b>${esc(k)}</b><br>${colName(c)}: ${m0(v || 0)}${open ? '<br>Click to see transactions' : ''}`)} style="--s:${Math.round(s * 100)}%">${v > 0.004 ? '' : '·'}</td>`;
     };
-    const table = `<div class="r-scroll"><table class="r-heat"><thead><tr><th></th>${ms.map(m => `<th>${esc(monthName(m, 'short'))}</th>`).join('')}<th>Total</th></tr></thead><tbody>
-      ${cats.map(([k, row, tot]) => { const rowMax = Math.max(...row.values()); return `<tr><th scope="row">${esc(k)}</th>${ms.map(m => cell(row.get(m), k, m, rowMax)).join('')}<td class="num">${m0(tot)}</td></tr>`; }).join('')}</tbody></table></div>
-      <div class="r-scale"><span>Quieter month</span><i style="--s:15%"></i><i style="--s:40%"></i><i style="--s:70%"></i><i style="--s:100%"></i><span>Busiest month for that group</span></div>`;
-    return card(`${k.noun} heatmap`, table, `<span class="r-sub">${k.type === 4 ? 'Income' : 'Expenses'} by group, last 12 months to ${monthName(r[1], 'short')}</span>`, 'r-wide');
+    const table = `<div class="r-scroll"><table class="r-heat${unit === 'day' ? ' dense' : ''}"><thead><tr><th></th>${cols.map(c => `<th>${esc(colHead(c))}</th>`).join('')}<th>Total</th></tr></thead><tbody>
+      ${cats.map(([k, row, tot]) => { const rowMax = Math.max(...row.values()); return `<tr><th scope="row">${esc(k)}</th>${cols.map(c => cell(row.get(c), k, c, rowMax)).join('')}<td class="num">${m0(tot)}</td></tr>`; }).join('')}</tbody></table></div>
+      <div class="r-scale"><span>Quieter ${unit}</span><i style="--s:15%"></i><i style="--s:40%"></i><i style="--s:70%"></i><i style="--s:100%"></i><span>Busiest ${unit} for that group</span></div>`;
+    return card(`${k.noun} heatmap`, table, `<span class="r-sub">${k.type === 4 ? 'Income' : 'Expenses'} by group and ${unit}, ${rangeLabel(r)}</span>`, 'r-wide');
   }
 
   // GitHub-style calendar of daily spending.
@@ -408,12 +415,12 @@
       S.drill = null; persist(); renderReports();
     });
     root.addEventListener('click', e => {
-      const t = e.target.closest('button, tr[data-search], tr[data-year], td[data-month]'); if (!t) return;
+      const t = e.target.closest('button, tr[data-search], tr[data-year], td[data-cell]'); if (!t) return;
       const rr = ranges();
       if (t.dataset.kind) { S.kind = +t.dataset.kind; S.drill = null; persist(); renderReports(); }
       else if (t.dataset.drill) { S.drill = t.dataset.drill; renderReports(); }
       else if ('undrill' in t.dataset) { S.drill = null; renderReports(); }
-      else if (t.dataset.month) goToTransactions({ parent: t.dataset.parent, month: t.dataset.month });
+      else if (t.dataset.cell) goToTransactions({ parent: t.dataset.parent, from: t.dataset.cell, to: t.dataset.cell });
       else if (t.dataset.child) goToTransactions({ parent: t.dataset.parent, child: t.dataset.child }, rr.r);
       else if (t.dataset.search) goToTransactions({ search: t.dataset.search }, rr.r);
       else if (t.dataset.label) { S.label = t.dataset.label; renderReports(); }
@@ -422,7 +429,7 @@
       else if (t.dataset.id) { hideTip(); openEditor(D.byId[t.dataset.id]); }
       else if (t.id === 'r-reset') { S.acc = ''; S.label = ''; renderReports(); }
     });
-    root.addEventListener('keydown', e => { if (e.key === 'Enter' && e.target.matches('tr[data-search], tr[data-year], td[data-month]')) e.target.click(); });
+    root.addEventListener('keydown', e => { if (e.key === 'Enter' && e.target.matches('tr[data-search], tr[data-year], td[data-cell]')) e.target.click(); });
     root.addEventListener('pointermove', e => {
       const hit = e.target.closest('[data-line]');
       if (hit) {

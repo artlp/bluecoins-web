@@ -5,7 +5,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Golos+Text:wght@400;500;600&family=Unbounded:wght@500;700&display=swap">
-<link rel="stylesheet" href="reports.css?v=4">
+<link rel="stylesheet" href="reports.css?v=5">
 <style>
 /* Layout: one column ledger, sticky top bar, three tabs (accounts, transactions, reports), modal editor */
 :root {
@@ -218,7 +218,7 @@ dialog::backdrop { background: rgb(0 0 0 / .4) }
 <script src="https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.8.0/sql-asm.js" integrity="sha512-rmkykIfjko0kedpism7nBHHSJKyB9/Ake2ihqff5QpUSVy3fy5Da7U5chQKtzXGAXEmNqrQ25t+NJIlFh3LoNg==" crossorigin="anonymous"></script>
 <script src="https://apis.google.com/js/api.js"></script>
 <!-- bump ?v= on reports.css/js and tools.js when they change, so browsers don't keep the old copy -->
-<script src="reports.js?v=6"></script>
+<script src="reports.js?v=7"></script>
 <script src="tools.js?v=4"></script>
 <script>
 const $ = s => document.querySelector(s);
@@ -381,7 +381,9 @@ function showTransactions({ month = '', type = '', acc = '', search = '', parent
 }
 function catFilterLabel(f) {
   const cat = f.parent ? esc(f.parent) + (f.child && f.child !== f.parent ? ' › ' + esc(f.child) : '') : '';
-  return [cat, f.from ? `${monthName(f.from, 'shortYear')} – ${monthName(f.to, 'shortYear')}` : ''].filter(Boolean).join(' · ');
+  const p = s => s.length === 4 ? s : s.length === 7 ? monthName(s, 'shortYear')
+    : new Date(s + 'T00:00:00').toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' });
+  return [cat, f.from ? (f.from === f.to ? p(f.from) : `${p(f.from)} – ${p(f.to)}`) : ''].filter(Boolean).join(' · ');
 }
 
 function filtered() {
@@ -389,7 +391,8 @@ function filtered() {
   return D.list.filter(t => {
     if (catFilter) {
       if (catFilter.parent && (t.parent !== catFilter.parent || catFilter.child && t.child !== catFilter.child)) return false;
-      if (catFilter.from) { const tm = t.date.slice(0, 7); if (tm < catFilter.from || tm > catFilter.to) return false; }
+      // from/to are a year "2024", a month "2024-05" or a day "2024-05-17": compare that many characters of the date
+      if (catFilter.from) { const k = t.date.slice(0, catFilter.from.length); if (k < catFilter.from || k > catFilter.to) return false; }
     }
     if (acc) { if (String(t.acc) !== acc) return false; }
     else if (t.type === 5 && t.ref !== 1) return false; // a transfer is two rows; show the sending side once

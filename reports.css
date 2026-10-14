@@ -78,6 +78,8 @@
   background: color-mix(in oklab, var(--accent) var(--s), var(--bg)); cursor: default }
 .r-heat td.num { padding-left: 8px; color: var(--muted) }
 .r-heat td.hm.link { cursor: pointer }
+.r-heat.dense { border-spacing: 2px }
+.r-heat.dense td.hm { width: 22px; min-width: 22px }
 .r-heat td.hm:hover, .r-heat td.hm:focus { outline: 2px solid var(--ink); outline-offset: -1px }
 .r-scale { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; font-size: .75rem; color: var(--muted) }
 .r-scale i { width: 16px; height: 12px; border-radius: 3px; background: color-mix(in oklab, var(--accent) var(--s), var(--bg)) }
