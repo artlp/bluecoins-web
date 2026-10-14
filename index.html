@@ -28,6 +28,7 @@ h1, h2 { font-family: var(--display); font-weight: 500; text-wrap: balance; marg
 h1 { font-size: 1.05rem; letter-spacing: .01em }
 h2 { font-size: .95rem }
 .muted { color: var(--muted) }
+a { color: var(--accent) }
 .num { font-variant-numeric: tabular-nums; white-space: nowrap }
 .pos { color: var(--pos) } .neg { color: var(--neg) }
 button, .btn, select, input, textarea { font: inherit; color: inherit }
@@ -139,7 +140,8 @@ dialog::backdrop { background: rgb(0 0 0 / .4) }
 
   <section id="empty" class="drop">
     <h2>Open your Bluecoins data</h2>
-    <p class="muted">Open it straight from Google Drive, or open a downloaded <b>.fydb</b> backup. The data is processed in this browser only.</p>
+    <p class="muted">Bluecoins Web lets you view and edit the finances you keep in the Bluecoins Android app from any browser: account balances, transactions, transfers and monthly reports. It opens the sync files Bluecoins keeps in your Google Drive, and saves your edits back to them so the phone app picks them up. Everything is processed in this browser; there is no server.</p>
+    <p class="muted">With Google Drive, the app only gets access to the two files you pick (<b>bluecoins.fydb</b> and <b>tracker_file</b>), never the rest of your Drive. You can also open a downloaded <b>.fydb</b> file instead.</p>
     <div class="actions">
       <button id="drive-open" class="primary" type="button">Open from Google Drive</button>
       <label class="btn" for="file">Open file</label>
@@ -205,6 +207,10 @@ dialog::backdrop { background: rgb(0 0 0 / .4) }
     </section>
     <p class="foot muted" id="foot"></p>
   </div>
+  <footer class="foot muted">
+    <a href="privacy.html">Privacy policy</a> · <a href="https://github.com/artlp/bluecoins-web">Source code</a> ·
+    An independent tool, not made by or affiliated with the developers of Bluecoins.
+  </footer>
 </div>
 
 <dialog id="ed">
@@ -241,12 +247,15 @@ dialog::backdrop { background: rgb(0 0 0 / .4) }
 <datalist id="items"></datalist>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.8.0/sql-asm.js"></script>
+<script src="https://apis.google.com/js/api.js"></script>
 <script>
 const $ = s => document.querySelector(s);
 const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 const SQLp = initSqlJs();
 // Public OAuth client ID (not a secret); only the test users listed in Google Cloud can sign in with it.
 const DEFAULT_CLIENT_ID = '351651997955-eopu08nr15mu2o1jn3cqvn2lqn8h388s.apps.googleusercontent.com';
+// Google Picker: the API key is public by design (locked to this site in Google Cloud); APP_ID is the Cloud project number.
+const PICKER_API_KEY = '', APP_ID = '351651997955';
 const API = 'https://www.googleapis.com/drive/v3/files', UPLOAD = 'https://www.googleapis.com/upload/drive/v3/files';
 let D = null, shown = 150, dirty = 0, drive = null, editing = null;
 
@@ -663,7 +672,7 @@ async function getToken(action) {
   notice('Opening Google sign-in…');
   location.assign('https://accounts.google.com/o/oauth2/v2/auth?' + new URLSearchParams({
     client_id: store.get('bcw-client-id') || DEFAULT_CLIENT_ID, redirect_uri: redirectUri(), response_type: 'token',
-    scope: 'https://www.googleapis.com/auth/drive', include_granted_scopes: 'true', state }));
+    scope: 'https://www.googleapis.com/auth/drive.file', state }));
   return new Promise(() => {}); // the page is navigating away
 }
 
@@ -699,15 +708,47 @@ async function gfetch(url, opt = {}) {
 }
 const gq = q => `${API}?q=${encodeURIComponent(q + ' and trashed = false')}&orderBy=modifiedTime desc&fields=files(id,name,modifiedTime,mimeType,parents)&pageSize=10`;
 
+// With the drive.file scope the app only sees files picked once in Google's picker (plus backups it created itself).
+async function findSyncFiles() {
+  const tracker = (await (await gfetch(gq("name = 'tracker_file'"))).json()).files[0];
+  if (!tracker) return null;
+  const dbs = (await (await gfetch(gq("name contains '.fydb' and not name contains 'bluecoins-web-backup'"))).json()).files;
+  const db = dbs.find(f => f.parents?.[0] && f.parents[0] === tracker.parents?.[0]) || dbs[0];
+  return db ? { db, tracker } : null;
+}
+
+function pickFiles() {
+  return new Promise((res, rej) => {
+    if (!window.gapi) return rej(new Error('The Google file picker did not load. An ad blocker may be blocking apis.google.com.'));
+    if (!PICKER_API_KEY) return rej(new Error('The Google file picker is not set up yet (missing API key).'));
+    gapi.load('picker', () => {
+      const view = new google.picker.DocsView(google.picker.ViewId.DOCS).setIncludeFolders(true).setMode(google.picker.DocsViewMode.LIST);
+      new google.picker.PickerBuilder()
+        .setTitle('Select bluecoins.fydb and tracker_file (hold Ctrl to pick both)')
+        .addView(view).enableFeature(google.picker.Feature.MULTISELECT_ENABLED)
+        .setOAuthToken(token).setDeveloperKey(PICKER_API_KEY).setAppId(APP_ID)
+        .setCallback(d => {
+          if (d.action === google.picker.Action.PICKED) res();
+          else if (d.action === google.picker.Action.CANCEL) rej(new Error('No files were picked. Choose Open from Google Drive and pick bluecoins.fydb and tracker_file.'));
+        })
+        .build().setVisible(true);
+    });
+  });
+}
+
 async function driveOpen() {
   if (dirty && !confirmDiscard()) return;
   try {
     await getToken('open');
     notice('Looking for your Bluecoins data in Google Drive…');
-    const tracker = (await (await gfetch(gq("name = 'tracker_file'"))).json()).files[0];
-    if (!tracker) throw new Error('No tracker_file found in your Google Drive. Make sure Bluecoins sync to Google Drive is on.');
-    const db = (await (await gfetch(gq(`'${tracker.parents[0]}' in parents and name contains '.fydb'`))).json()).files[0];
-    if (!db) throw new Error('Found tracker_file, but no .fydb file next to it.');
+    let files = await findSyncFiles();
+    if (!files) {
+      notice('Pick bluecoins.fydb and tracker_file from your Bluecoins folder. You only need to do this once.');
+      await pickFiles();
+      files = await findSyncFiles();
+    }
+    if (!files) throw new Error('Both files are needed: pick bluecoins.fydb and tracker_file from the same Bluecoins folder.');
+    const { db, tracker } = files;
     const bytes = new Uint8Array(await (await gfetch(`${API}/${db.id}?alt=media`)).arrayBuffer());
     drive = { db, tracker };
     if (await open(bytes, `${db.name} (Google Drive)`, 'drive')) notice(`Opened ${db.name} from Google Drive, last changed ${new Date(db.modifiedTime).toLocaleString()}.`);
