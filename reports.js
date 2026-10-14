@@ -187,6 +187,11 @@
     return card('Net worth', `<div class="r-scroll">${svg}</div><p class="r-note muted">Balances converted at today's account rates, as on the Accounts tab.</p>`, extra);
   }
 
+  // The Expenses / Income switch in the filter row decides what every breakdown below shows.
+  const K = () => S.kind === 4
+    ? { type: 4, val: t => t.amount, noun: 'Income', what: 'income', who: 'Source', whoPl: 'sources', big: 'Largest income' }
+    : { type: 3, val: t => -t.amount, noun: 'Spending', what: 'spending', who: 'Payee', whoPl: 'payees', big: 'Largest expenses' };
+
   function categories(list, r, prev) {
     const kind = S.kind, drill = S.drill;
     const scope = drill ? list.filter(t => t.parent === drill) : list;
@@ -196,8 +201,6 @@
     let rows = [...cur].filter(([, v]) => v > 0.004).sort((a, b) => b[1] - a[1]);
     const total = rows.reduce((s, [, v]) => s + v, 0);
     const max = Math.max(1, ...rows.map(([, v]) => v), ...rows.map(([k]) => old.get(k) || 0));
-    const seg = `<div class="r-seg" role="radiogroup" aria-label="Show">
-      <button type="button" data-kind="3" aria-pressed="${kind === 3}">Expenses</button><button type="button" data-kind="4" aria-pressed="${kind === 4}">Income</button></div>`;
     const crumb = drill ? `<div class="r-crumb"><button type="button" class="r-link" data-undrill>All categories</button> › <b>${esc(drill)}</b></div>` : '';
     const body = rows.length ? `<div class="r-bars">${rows.map(([k, v]) => {
       const o = old.get(k) || 0;
@@ -210,17 +213,17 @@
       </button>`;
     }).join('')}</div>` : empty;
     const legend = prev ? `<p class="r-note muted">Bar: ${rangeLabel(r)}. Tick: ${rangeLabel(prev)}. ${drill ? 'Click a category to see its transactions.' : 'Click a group to see its categories.'}</p>` : '';
-    return card(`${kind === 4 ? 'Income' : 'Expenses'} by category`, crumb + body + legend, seg, 'r-wide');
+    return card(`${kind === 4 ? 'Income' : 'Expenses'} by category`, crumb + body + legend, '', 'r-wide');
   }
 
   // Category groups x last 12 months, one hue light-to-dark (sequential).
   function heatmap(list, r) {
-    const ms = monthsOf(addM(r[1], -11), r[1]);
-    const exp = list.filter(t => t.type === 3 && t.date.slice(0, 7) >= ms[0] && t.date.slice(0, 7) <= ms[11]);
+    const k = K(), ms = monthsOf(addM(r[1], -11), r[1]);
+    const sel = list.filter(t => t.type === k.type && t.date.slice(0, 7) >= ms[0] && t.date.slice(0, 7) <= ms[11]);
     const byCat = new Map();
-    for (const t of exp) { const row = byCat.get(t.parent) || new Map(); const m = t.date.slice(0, 7); row.set(m, (row.get(m) || 0) - t.amount); byCat.set(t.parent, row); }
+    for (const t of sel) { const row = byCat.get(t.parent) || new Map(); const m = t.date.slice(0, 7); row.set(m, (row.get(m) || 0) + k.val(t)); byCat.set(t.parent, row); }
     let cats = [...byCat].map(([k, row]) => [k, row, [...row.values()].reduce((s, v) => s + v, 0)]).filter(c => c[2] > 0.004).sort((a, b) => b[2] - a[2]);
-    if (!cats.length) return card('Spending heatmap', empty, '', 'r-wide');
+    if (!cats.length) return card(`${k.noun} heatmap`, empty, '', 'r-wide');
     if (cats.length > 12) {
       const other = new Map();
       for (const [, row] of cats.slice(11)) for (const [m, v] of row) other.set(m, (other.get(m) || 0) + v);
@@ -234,21 +237,21 @@
     const table = `<div class="r-scroll"><table class="r-heat"><thead><tr><th></th>${ms.map(m => `<th>${esc(monthName(m, 'short'))}</th>`).join('')}<th>Total</th></tr></thead><tbody>
       ${cats.map(([k, row, tot]) => { const rowMax = Math.max(...row.values()); return `<tr><th scope="row">${esc(k)}</th>${ms.map(m => cell(row.get(m), k, m, rowMax)).join('')}<td class="num">${m0(tot)}</td></tr>`; }).join('')}</tbody></table></div>
       <div class="r-scale"><span>Quieter month</span><i style="--s:15%"></i><i style="--s:40%"></i><i style="--s:70%"></i><i style="--s:100%"></i><span>Busiest month for that group</span></div>`;
-    return card('Spending heatmap', table, `<span class="r-sub">Expenses by group, last 12 months to ${monthName(r[1], 'short')}</span>`, 'r-wide');
+    return card(`${k.noun} heatmap`, table, `<span class="r-sub">${k.type === 4 ? 'Income' : 'Expenses'} by group, last 12 months to ${monthName(r[1], 'short')}</span>`, 'r-wide');
   }
 
   // GitHub-style calendar of daily spending.
   function calendar(list, r) {
     const startM = monthsOf(r[0], r[1]).length > 12 ? addM(r[1], -11) : r[0];
     const start = dayNum(startM + '-01'), end = dayNum(lastDay(r[1]) < today ? lastDay(r[1]) : today);
-    const day = new Map();
-    for (const t of list) if (t.type === 3) { const d = t.date.slice(0, 10); const x = day.get(d) || { v: 0, n: 0 }; x.v -= t.amount; x.n++; day.set(d, x); }
+    const k = K(), day = new Map();
+    for (const t of list) if (t.type === k.type) { const d = t.date.slice(0, 10); const x = day.get(d) || { v: 0, n: 0 }; x.v += k.val(t); x.n++; day.set(d, x); }
     const vals = [...day].filter(([d]) => { const n = dayNum(d); return n >= start && n <= end; }).map(([, x]) => x.v).sort((a, b) => a - b);
     const cap = Math.max(1, vals[Math.floor(vals.length * 0.95)] || 1); // 95th percentile so one big purchase doesn't wash out the rest
     const dow = n => (new Date(n * 864e5).getUTCDay() + 6) % 7; // Monday = 0
     const first = start - dow(start), weeks = Math.ceil((end - first + 1) / 7);
     const C = 13, G = 3, L = 26, T = 18, W = L + weeks * (C + G), H = T + 7 * (C + G);
-    let svg = `<svg class="r-svg r-cal" width="${W}" height="${H}" role="img" aria-label="Daily spending calendar">`;
+    let svg = `<svg class="r-svg r-cal" width="${W}" height="${H}" role="img" aria-label="Daily ${k.what} calendar">`;
     ['Mon', '', 'Wed', '', 'Fri', '', ''].forEach((d, i) => { if (d) svg += `<text class="tick" x="0" y="${T + i * (C + G) + 10}">${d}</text>`; });
     let lastMonth = '';
     for (let n = first; n <= end; n++) {
@@ -257,12 +260,12 @@
       if (ds.slice(0, 7) !== lastMonth) { lastMonth = ds.slice(0, 7); svg += `<text class="tick" x="${x}" y="11">${esc(monthName(lastMonth, 'short').split(' ')[0])}</text>`; }
       const x0 = day.get(ds), v = x0?.v || 0;
       const s = v > 0.004 ? Math.max(0.12, Math.min(1, Math.sqrt(v / cap))) : 0;
-      svg += `<rect class="day" x="${x}" y="${y}" width="${C}" height="${C}" rx="3" style="--s:${Math.round(s * 100)}%"${tipAttr(`<b>${longDate(ds)}</b><br>${v > 0.004 ? `${m0(v)} · ${x0.n} transaction${x0.n === 1 ? '' : 's'}` : 'No spending'}`)}/>`;
+      svg += `<rect class="day" x="${x}" y="${y}" width="${C}" height="${C}" rx="3" style="--s:${Math.round(s * 100)}%"${tipAttr(`<b>${longDate(ds)}</b><br>${v > 0.004 ? `${m0(v)} · ${x0.n} transaction${x0.n === 1 ? '' : 's'}` : `No ${k.what}`}`)}/>`;
     }
     svg += '</svg>';
-    const spentDays = vals.length, totalDays = end - start + 1;
-    const extra = `<span class="r-sub">${spentDays} of ${totalDays} days with spending</span>`;
-    return card('Spending calendar', `<div class="r-scroll">${svg}</div>`, extra, 'r-wide');
+    const activeDays = vals.length, totalDays = end - start + 1;
+    const extra = `<span class="r-sub">${activeDays} of ${totalDays} days with ${k.what}</span>`;
+    return card(`${k.noun} calendar`, `<div class="r-scroll">${svg}</div>`, extra, 'r-wide');
   }
 
   // Median day per weekday (days without spending count as 0): one big purchase can't make a weekday look expensive.
@@ -295,40 +298,41 @@
   }
 
   function payees(list, r) {
-    const g = new Map();
-    for (const t of list) if (t.type === 3 && inRange(t, r)) { const k = t.item || '—'; const x = g.get(k) || { v: 0, n: 0 }; x.v -= t.amount; x.n++; g.set(k, x); }
+    const kk = K(), g = new Map();
+    for (const t of list) if (t.type === kk.type && inRange(t, r)) { const k = t.item || '—'; const x = g.get(k) || { v: 0, n: 0 }; x.v += kk.val(t); x.n++; g.set(k, x); }
     const all = [...g].filter(([, x]) => x.v > 0.004).sort((a, b) => b[1].v - a[1].v);
     const total = all.reduce((s, [, x]) => s + x.v, 0);
-    if (!all.length) return card('Top payees', empty);
+    const title = `Top ${kk.whoPl}`;
+    if (!all.length) return card(title, empty);
     const max = all[0][1].v;
-    return card('Top payees', `<div class="r-scroll"><table class="r-table r-payees"><thead><tr><th>Payee</th><th>Total</th><th>Count</th><th>Average</th></tr></thead><tbody>
+    return card(title, `<div class="r-scroll"><table class="r-table r-payees"><thead><tr><th>${kk.who}</th><th>Total</th><th>Count</th><th>Average</th></tr></thead><tbody>
       ${all.slice(0, 15).map(([k, x]) => `<tr data-search="${esc(k)}" tabindex="0"><td><span class="r-pname">${esc(k)}</span><span class="r-track thin"><i style="width:${x.v / max * 100}%"></i></span></td>
         <td class="num">${m0(x.v)} <span class="muted">${pct(x.v / total)}</span></td><td class="num">${x.n}</td><td class="num">${m0(x.v / x.n)}</td></tr>`).join('')}
-      </tbody></table></div><p class="r-note muted">${all.length.toLocaleString()} payees in this period. Click one to see its transactions.</p>`);
+      </tbody></table></div><p class="r-note muted">${all.length.toLocaleString()} ${kk.whoPl} in this period. Click one to see its transactions.</p>`);
   }
 
   function labelsAndAccounts(list, r) {
-    const exp = list.filter(t => t.type === 3 && inRange(t, r));
-    const total = exp.reduce((s, t) => s - t.amount, 0);
+    const k = K(), sel = list.filter(t => t.type === k.type && inRange(t, r));
+    const total = sel.reduce((s, t) => s + k.val(t), 0);
     const lg = new Map();
-    for (const t of exp) for (const l of t.labels) { const x = lg.get(l) || { v: 0, n: 0 }; x.v -= t.amount; x.n++; lg.set(l, x); }
+    for (const t of sel) for (const l of t.labels) { const x = lg.get(l) || { v: 0, n: 0 }; x.v += k.val(t); x.n++; lg.set(l, x); }
     const labelRows = [...lg].filter(([, x]) => x.v > 0.004).sort((a, b) => b[1].v - a[1].v).slice(0, 10)
       .map(([k, x]) => ({ k, v: x.v, n: x.n, label: `<span class="tag" style="--h:${hue(k)}">${esc(k)}</span>`, attr: `data-label="${esc(k)}"` }));
     const ag = new Map();
-    for (const t of exp) { const x = ag.get(t.acc) || { v: 0, n: 0 }; x.v -= t.amount; x.n++; ag.set(t.acc, x); }
+    for (const t of sel) { const x = ag.get(t.acc) || { v: 0, n: 0 }; x.v += k.val(t); x.n++; ag.set(t.acc, x); }
     const accRows = [...ag].filter(([, x]) => x.v > 0.004).sort((a, b) => b[1].v - a[1].v).slice(0, 10)
       .map(([id, x]) => ({ k: D.acc[id].name, v: x.v, n: x.n, label: `${esc(D.acc[id].name)} <span class="code">${esc(D.acc[id].cur)}</span>`, attr: `data-acc="${id}"` }));
-    return hbars('Spending by tag', labelRows, total, { note: 'A transaction with several tags counts under each. Click a tag to filter all reports by it.' })
-      + hbars('Spending by account', accRows, total, { note: 'Click an account to filter all reports by it.' });
+    return hbars(`${k.noun} by tag`, labelRows, total, { note: 'A transaction with several tags counts under each. Click a tag to filter all reports by it.' })
+      + hbars(`${k.noun} by account`, accRows, total, { note: 'Click an account to filter all reports by it.' });
   }
 
   function biggest(list, r) {
-    const top = list.filter(t => t.type === 3 && inRange(t, r)).sort((a, b) => a.amount - b.amount).slice(0, 10);
-    if (!top.length) return card('Largest expenses', empty);
-    return card('Largest expenses', `<div class="r-list">${top.map(t => `
+    const k = K(), top = list.filter(t => t.type === k.type && inRange(t, r)).sort((a, b) => k.val(b) - k.val(a)).slice(0, 10);
+    if (!top.length) return card(k.big, empty);
+    return card(k.big, `<div class="r-list">${top.map(t => `
       <button type="button" class="r-li" data-id="${t.id}">
         <span><b>${esc(t.item || t.catName)}</b><span class="muted"> · ${esc(t.catName)} · ${esc(t.date.slice(0, 10))}</span></span>
-        <span class="num">${m0(-t.amount)}${t.tc !== D.base ? ` <span class="code">${esc(t.tc)}</span>` : ''}</span>
+        <span class="num">${m0(k.val(t))}${t.tc !== D.base ? ` <span class="code">${esc(t.tc)}</span>` : ''}</span>
       </button>`).join('')}</div>`);
   }
 
@@ -351,6 +355,8 @@
     const opt = (v, l, sel) => `<option value="${esc(v)}"${sel ? ' selected' : ''}>${esc(l)}</option>`;
     const labels = [...new Set(D.list.flatMap(t => t.labels))].sort();
     return `<div class="r-filters">
+      <div class="r-seg" role="group" aria-label="Show breakdowns for">
+        <button type="button" data-kind="3" aria-pressed="${S.kind === 3}">Expenses</button><button type="button" data-kind="4" aria-pressed="${S.kind === 4}">Income</button></div>
       <select id="r-period" aria-label="Period">${PERIODS.map(([v, l]) => opt(v, l, S.period === v)).join('')}</select>
       <span class="r-custom"${S.period === 'custom' ? '' : ' hidden'}><input id="r-from" type="month" value="${rr.r[0]}" aria-label="From"> – <input id="r-to" type="month" value="${rr.r[1]}" aria-label="To"></span>
       <select id="r-acc" aria-label="Account">${opt('', 'All accounts', !S.acc)}${D.accounts.map(a => opt(a.id, a.name + (a.hidden ? ' (hidden)' : ''), String(a.id) === S.acc)).join('')}</select>
@@ -367,7 +373,7 @@
     lines.clear();
     root.innerHTML = filters(rr) + kpis(list, rr.r, rr.prev)
       + `<div class="r-grid">${cashflow(list, rr.r)}${netWorth(rr.r, rr.first)}${categories(list, rr.r, rr.prev)}${heatmap(list, rr.r)}${calendar(list, rr.r)}
-         ${weekdays(list, rr.r)}${biggest(list, rr.r)}${payees(list, rr.r)}${labelsAndAccounts(list, rr.r)}${years(list)}</div>
+         ${S.kind === 3 ? weekdays(list, rr.r) : ''}${biggest(list, rr.r)}${payees(list, rr.r)}${labelsAndAccounts(list, rr.r)}${years(list)}</div>
       <p class="r-note muted">Amounts in ${esc(D.base)} at the rate saved with each transaction. Transfers between your accounts and transactions marked “not counted” are left out.</p>`;
   };
 
