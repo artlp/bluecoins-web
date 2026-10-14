@@ -246,6 +246,8 @@ dialog::backdrop { background: rgb(0 0 0 / .4) }
 const $ = s => document.querySelector(s);
 const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 const SQLp = initSqlJs();
+// Public OAuth client ID (not a secret); only the test users listed in Google Cloud can sign in with it.
+const DEFAULT_CLIENT_ID = '351651997955-eopu08nr15mu2o1jn3cqvn2lqn8h388s.apps.googleusercontent.com';
 const API = 'https://www.googleapis.com/drive/v3/files', UPLOAD = 'https://www.googleapis.com/upload/drive/v3/files';
 let D = null, shown = 150, dirty = 0, drive = null, editing = null;
 
@@ -642,7 +644,7 @@ let token = null, tokenExp = 0;
 function getToken() {
   return new Promise((res, rej) => {
     if (token && Date.now() < tokenExp - 60000) return res(token);
-    const clientId = store.get('bcw-client-id');
+    const clientId = store.get('bcw-client-id') || DEFAULT_CLIENT_ID;
     if (!clientId) { $('#setup').open = true; return rej(new Error('Set up Google Drive access first (see the steps below).')); }
     if (!window.google?.accounts?.oauth2) return rej(new Error('Google sign-in did not load. Check your connection and reload the page.'));
     google.accounts.oauth2.initTokenClient({
@@ -734,7 +736,7 @@ $('#upload').addEventListener('click', driveUpload);
 $('#drive-open').addEventListener('click', driveOpen);
 $('#drive-reload').addEventListener('click', driveOpen);
 $('#origin').textContent = location.origin;
-$('#client-id').value = store.get('bcw-client-id') || '';
+$('#client-id').value = store.get('bcw-client-id') || DEFAULT_CLIENT_ID;
 $('#client-save').addEventListener('click', () => { store.set('bcw-client-id', $('#client-id').value.trim()); token = null; notice('Saved. Now choose Open from Google Drive.'); });
 $('#forget').addEventListener('click', async () => {
   if (dirty && !confirmDiscard()) return;
