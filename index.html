@@ -5,6 +5,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Golos+Text:wght@400;500;600&family=Unbounded:wght@500;700&display=swap">
+<link rel="stylesheet" href="reports.css?v=2">
 <style>
 /* Layout: one column ledger, sticky top bar, three tabs (accounts, transactions, reports), modal editor */
 :root {
@@ -24,7 +25,7 @@
 * { box-sizing: border-box }
 [hidden] { display: none !important }
 body { background: var(--bg); color: var(--ink); font: 15px/1.45 var(--body); margin: 0; padding-inline: 16px; padding-block: 0 48px }
-.wrap { max-width: 960px; margin: 0 auto }
+.wrap { max-width: 1120px; margin: 0 auto }
 h1, h2 { font-family: var(--display); font-weight: 500; text-wrap: balance; margin: 0 }
 h1 { font-size: 1.05rem; letter-spacing: .01em }
 h2 { font-size: .95rem }
@@ -94,25 +95,6 @@ select, input, textarea { background: var(--surface); border: 1px solid var(--li
 .code { font-size: .66rem; font-weight: 600; letter-spacing: .06em; line-height: 1; padding: 3px 5px; border-radius: 4px; background: var(--accent-soft); color: var(--accent) }
 .more { margin: 16px auto; display: block }
 
-.cards { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin-block: 16px 24px }
-@media (max-width: 560px) { .cards { grid-template-columns: 1fr } }
-.card { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px }
-.card .v { font-family: var(--display); font-size: 1.25rem; font-weight: 500 }
-.split { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 24px }
-@media (max-width: 720px) { .split { grid-template-columns: 1fr } }
-.bar-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 2px 12px; padding-block: 6px; font-size: .9rem }
-.bar { grid-column: 1 / -1; height: 6px; background: var(--accent-soft); border-radius: 3px; overflow: hidden }
-.bar i { display: block; height: 100%; background: var(--accent) }
-.bar.inc i { background: var(--pos) }
-.chart-box { overflow-x: auto; margin-top: 8px }
-.chart { display: grid; grid-template-columns: repeat(12, minmax(36px, 1fr)); gap: 6px; height: 180px; align-items: end; min-width: 480px; border-bottom: 1px solid var(--line) }
-.chart .col { display: flex; gap: 2px; align-items: end; height: 100%; justify-content: center }
-.chart .col span { width: 40%; max-width: 16px; border-radius: 3px 3px 0 0 }
-.chart .in { background: var(--pos) } .chart .out { background: var(--neg) }
-.chart .col.sel { background: var(--accent-soft); border-radius: 4px 4px 0 0 }
-.chart-labels { display: grid; grid-template-columns: repeat(12, minmax(36px, 1fr)); gap: 6px; min-width: 480px; font-size: .72rem; color: var(--muted); text-align: center; padding-top: 4px }
-.legend { display: flex; flex-wrap: wrap; gap: 14px; font-size: .8rem; color: var(--muted) }
-.legend b { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 4px; vertical-align: -1px }
 .foot { margin-top: 32px; font-size: .8rem }
 
 dialog { border: 1px solid var(--line); border-radius: 14px; background: var(--surface); color: var(--ink); padding: 0; width: min(560px, calc(100% - 32px)); max-height: calc(100% - 32px) }
@@ -199,20 +181,7 @@ dialog::backdrop { background: rgb(0 0 0 / .4) }
       <button id="more" class="more" type="button" hidden>Show more</button>
     </section>
 
-    <section id="tab-reports" hidden>
-      <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap">
-        <label for="r-month" class="muted">Month</label>
-        <input id="r-month" type="month">
-      </div>
-      <div class="cards" id="r-cards"></div>
-      <div class="split">
-        <div><h2>Expenses by category</h2><div id="r-exp"></div></div>
-        <div><h2>Income by category</h2><div id="r-inc"></div></div>
-      </div>
-      <h2 style="margin-top:28px">Last 12 months</h2>
-      <div class="legend"><span><b style="background:var(--pos)"></b>Income</span><span><b style="background:var(--neg)"></b>Expenses</span><span id="r-max"></span></div>
-      <div class="chart-box"><div class="chart" id="r-chart"></div><div class="chart-labels" id="r-labels"></div></div>
-    </section>
+    <section id="tab-reports" hidden><div id="reports"></div></section>
     <p class="foot muted" id="foot"></p>
   </div>
   <footer class="foot muted">
@@ -258,6 +227,7 @@ dialog::backdrop { background: rgb(0 0 0 / .4) }
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.8.0/sql-asm.js"></script>
 <script src="https://apis.google.com/js/api.js"></script>
+<script src="reports.js?v=2"></script><!-- bump ?v= when reports change, so browsers don't keep the old copy -->
 <script>
 const $ = s => document.querySelector(s);
 const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -364,7 +334,6 @@ async function open(bytes, name, source) {
   if (source !== 'drive') drive = null;
   if (source === 'local') try { await idb('readwrite', s => s.put({ bytes, name, savedAt: Date.now() }, 'last')); } catch {}
   $('#empty').hidden = true; $('#app').hidden = false;
-  $('#r-month').value = (D.list[0]?.date || '').slice(0, 7);
   renderAll();
   loadRates();
   return true;
@@ -439,37 +408,6 @@ function renderTransactions() {
   }
   $('#list').innerHTML = html || '<p class="muted">No transactions match these filters.</p>';
   $('#more').hidden = list.length <= shown;
-}
-
-// ---------- reports (main currency, at the rate saved with each transaction) ----------
-function renderReports() {
-  const m = $('#r-month').value; if (!m) return;
-  const inMonth = D.list.filter(t => t.type !== 5 && !t.void && t.date.startsWith(m));
-  const byParent = type => {
-    const g = {};
-    for (const t of inMonth) if (t.type === type) g[t.parent] = (g[t.parent] || 0) + t.amount;
-    return Object.entries(g).map(([k, v]) => [k, type === 3 ? -v : v]).filter(([, v]) => Math.abs(v) > 0.004).sort((x, y) => y[1] - x[1]);
-  };
-  const exp = byParent(3), inc = byParent(4);
-  const tExp = exp.reduce((s, [, v]) => s + v, 0), tInc = inc.reduce((s, [, v]) => s + v, 0);
-  $('#r-cards').innerHTML = [['Income', tInc, 'pos'], ['Expenses', tExp, 'neg'], ['Net', tInc - tExp, cls(tInc - tExp)]]
-    .map(([l, v, c]) => `<div class="card"><div class="label">${l} · ${monthName(m)}</div><div class="v num ${c}">${money(v, D.base)}</div></div>`).join('');
-  const bars = (list, total, kind) => list.length ? list.map(([k, v]) => `
-    <div class="bar-row"><span>${esc(k)}</span><span class="num">${money(v, D.base)} <span class="muted">${total ? Math.round(v / total * 100) : 0}%</span></span>
-    <div class="bar ${kind}"><i style="width:${Math.max(0, v / list[0][1] * 100)}%"></i></div></div>`).join('') : '<p class="muted">Nothing this month.</p>';
-  $('#r-exp').innerHTML = bars(exp, tExp, '');
-  $('#r-inc').innerHTML = bars(inc, tInc, 'inc');
-
-  const months = [], [y, mo] = m.split('-').map(Number);
-  for (let i = 11; i >= 0; i--) { const n = y * 12 + mo - 1 - i; months.push(`${Math.floor(n / 12)}-${String(n % 12 + 1).padStart(2, '0')}`); }
-  const tot = Object.fromEntries(months.map(k => [k, { i: 0, o: 0 }]));
-  for (const t of D.list) { const k = t.date.slice(0, 7); if (tot[k] && t.type !== 5 && !t.void) t.type === 4 ? tot[k].i += t.amount : tot[k].o -= t.amount; }
-  const max = Math.max(1, ...months.flatMap(k => [tot[k].i, tot[k].o]));
-  const h = v => Math.max(0, v / max * 100);
-  $('#r-max').textContent = `Tallest bar: ${money(max, D.base)}`;
-  $('#r-chart').innerHTML = months.map(k => `<div class="col${k === m ? ' sel' : ''}" title="${monthName(k)}: income ${money(tot[k].i, D.base)}, expenses ${money(tot[k].o, D.base)}">
-    <span class="in" style="height:${h(tot[k].i)}%"></span><span class="out" style="height:${h(tot[k].o)}%"></span></div>`).join('');
-  $('#r-labels').innerHTML = months.map(k => `<span>${monthName(k, 'short')}</span>`).join('');
 }
 
 function renderAll() {
@@ -847,7 +785,6 @@ $('#groups').addEventListener('click', e => {
 for (const id of ['#q', '#f-acc', '#f-type', '#f-month']) $(id).addEventListener('input', () => { shown = 150; renderTransactions(); });
 $('#clear').addEventListener('click', () => { for (const id of ['#q', '#f-acc', '#f-type', '#f-month']) $(id).value = ''; shown = 150; renderTransactions(); });
 $('#more').addEventListener('click', () => { shown += 300; renderTransactions(); });
-$('#r-month').addEventListener('input', renderReports);
 $('#list').addEventListener('click', e => { const b = e.target.closest('[data-id]'); if (b) openEditor(D.byId[b.dataset.id]); });
 $('#add').addEventListener('click', () => openEditor(null));
 for (const r of document.querySelectorAll('input[name=ed-type]')) r.addEventListener('change', () => { fillCategories(); updateEditorUI(); });
