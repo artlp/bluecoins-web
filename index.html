@@ -111,7 +111,9 @@ dialog::backdrop { background: rgb(0 0 0 / .4) }
 .seg label:has(input:disabled) { opacity: .4; cursor: default }
 .seg label:has(input:focus-visible) { outline: 2px solid var(--accent); outline-offset: -2px }
 .label-picks { display: flex; flex-wrap: wrap; gap: 4px }
-.label-picks button { padding: 0 8px; font-size: .78rem; border-radius: 999px }
+.label-picks button { padding: 1px 9px; font-size: .78rem; border-radius: 999px; border: 1px solid var(--line); background: none; color: var(--muted) }
+.label-picks button[aria-pressed=true] { border-color: transparent; background: hsl(var(--h) var(--tag-s) var(--tag-bg)); color: hsl(var(--h) var(--tag-s) var(--tag-fg)); font-weight: 600 }
+.label-picks button[aria-pressed=true]::after { content: " ×"; font-weight: 400 }
 .ed-actions { display: flex; gap: 8px; align-items: center }
 .ed-actions .grow { flex: 1 }
 </style>
@@ -501,12 +503,20 @@ function openEditor(t) {
   $('#ed-item').value = F?.item || '';
   $('#ed-notes').value = F?.notes || '';
   $('#ed-labels').value = (F?.labels || []).join(', ');
-  $('#ed-label-picks').innerHTML = D.labelNames.map(l => `<button type="button" data-label="${esc(l)}">${esc(l)}</button>`).join('');
+  renderLabelPicks();
   fillCategories(F?.cat);
   delete $('#ed-rate').dataset.cur;
   updateEditorUI();
   $('#ed').showModal();
   if (!liveRates) loadRates().then(() => { if ($('#ed').open) { delete $('#ed-rate').dataset.cur; updateEditorUI(); } });
+}
+
+const edLabels = () => [...new Set($('#ed-labels').value.split(',').map(s => s.trim()).filter(Boolean))];
+// Quick-pick chips: the transaction's own labels first (highlighted), then the most used ones. Clicking toggles.
+function renderLabelPicks() {
+  const cur = edLabels();
+  $('#ed-label-picks').innerHTML = [...new Set([...cur, ...D.labelNames])].map(l => `<button type="button" class="tag" style="--h:${hue(l)}"
+    data-label="${esc(l)}" aria-pressed="${cur.includes(l)}" title="${cur.includes(l) ? 'Remove' : 'Add'} ${esc(l)}">${esc(l)}</button>`).join('');
 }
 
 function fillCategories(selected) {
@@ -791,10 +801,12 @@ for (const r of document.querySelectorAll('input[name=ed-type]')) r.addEventList
 $('#ed-acc').addEventListener('change', updateEditorUI);
 $('#ed-to').addEventListener('change', updateEditorUI);
 $('#ed-label-picks').addEventListener('click', e => {
-  const l = e.target.dataset.label; if (!l) return;
-  const cur = $('#ed-labels').value.split(',').map(s => s.trim()).filter(Boolean);
-  if (!cur.includes(l)) $('#ed-labels').value = [...cur, l].join(', ');
+  const l = e.target.closest('[data-label]')?.dataset.label; if (!l) return;
+  const cur = edLabels();
+  $('#ed-labels').value = (cur.includes(l) ? cur.filter(x => x !== l) : [...cur, l]).join(', ');
+  renderLabelPicks();
 });
+$('#ed-labels').addEventListener('input', renderLabelPicks);
 $('#ed-form').addEventListener('submit', e => { e.preventDefault(); saveEditor(); });
 $('#ed-cancel').addEventListener('click', () => $('#ed').close());
 $('#ed-del').addEventListener('click', e => {
