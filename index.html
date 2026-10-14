@@ -217,6 +217,7 @@ dialog::backdrop { background: rgb(0 0 0 / .4) }
   </div>
   <footer class="foot muted">
     <a href="privacy.html">Privacy policy</a> · <a href="https://github.com/artlp/bluecoins-web">Source code</a> ·
+    <a href="https://www.exchangerate-api.com">Rates By Exchange Rate API</a> ·
     An independent tool, not made by or affiliated with the developers of Bluecoins.
   </footer>
 </div>
@@ -238,6 +239,7 @@ dialog::backdrop { background: rgb(0 0 0 / .4) }
       <label id="ed-to-wrap">To account<select id="ed-to"></select></label>
       <label id="ed-cat-wrap">Category<select id="ed-cat"></select></label>
     </div>
+    <label id="ed-rate-wrap"><span id="ed-rate-label">Exchange rate</span><input id="ed-rate" inputmode="decimal" autocomplete="off"><small class="muted" id="ed-rate-note"></small></label>
     <label id="ed-recv-wrap">Amount received <span id="ed-to-cur"></span><input id="ed-recv" inputmode="decimal" autocomplete="off" placeholder="Leave empty to convert at the saved rate"></label>
     <label>Payee<input id="ed-item" list="items" autocomplete="off" required></label>
     <label>Labels<input id="ed-labels" autocomplete="off" placeholder="Comma separated"></label>
@@ -364,6 +366,7 @@ async function open(bytes, name, source) {
   $('#empty').hidden = true; $('#app').hidden = false;
   $('#r-month').value = (D.list[0]?.date || '').slice(0, 7);
   renderAll();
+  loadRates();
   return true;
 }
 
@@ -495,8 +498,19 @@ const pad = n => String(n).padStart(2, '0');
 const nowLocal = () => { const d = new Date(); return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`; };
 const fmtInput = n => String(Math.round(Math.abs(n) * 100) / 100);
 const edType = () => +document.querySelector('input[name=ed-type]:checked').value;
-// Keep the currency and rate the row was typed in while it stays on the same account; otherwise use the account's own.
-const curFor = (row, accId) => row && row.acc === accId ? { tc: row.tc, rate: row.rate } : { tc: D.acc[accId].cur, rate: D.acc[accId].rate };
+// Like Bluecoins, each transaction stores the market rate of its own day. New rows get today's rate
+// (public rates, only the main currency code is sent); the account's saved rate is the offline fallback.
+let liveRates = null;
+async function loadRates() {
+  if (liveRates || !D) return;
+  try {
+    const j = await (await fetch(`https://open.er-api.com/v6/latest/${encodeURIComponent(D.base)}`)).json();
+    if (j.result === 'success') liveRates = j.rates;
+  } catch {}
+}
+const todayRate = cur => cur === D.base ? 1 : liveRates?.[cur] || D.acc[Object.keys(D.acc).find(id => D.acc[id].cur === cur)]?.rate || 1;
+// Keep the currency and rate the row was typed in while it stays on the same account; otherwise use today's rate.
+const curFor = (row, accId) => row && row.acc === accId ? { tc: row.tc, rate: row.rate } : { tc: D.acc[accId].cur, rate: todayRate(D.acc[accId].cur) };
 
 function newId() { D.maxId = Math.max(Date.now(), D.maxId + 1); return D.maxId; }
 function itemId(name) {
@@ -551,8 +565,10 @@ function openEditor(t) {
   $('#ed-labels').value = (F?.labels || []).join(', ');
   $('#ed-label-picks').innerHTML = D.labelNames.map(l => `<button type="button" data-label="${esc(l)}">${esc(l)}</button>`).join('');
   fillCategories(F?.cat);
+  delete $('#ed-rate').dataset.cur;
   updateEditorUI();
   $('#ed').showModal();
+  if (!liveRates) loadRates().then(() => { if ($('#ed').open) { delete $('#ed-rate').dataset.cur; updateEditorUI(); } });
 }
 
 function fillCategories(selected) {
@@ -573,6 +589,15 @@ function updateEditorUI() {
   $('#ed-to-wrap').hidden = type !== 5;
   $('#ed-cat-wrap').hidden = type === 5;
   $('#ed-recv-wrap').hidden = type !== 5 || from.tc === to.tc;
+  const rateInput = $('#ed-rate');
+  $('#ed-rate-wrap').hidden = type === 5 || from.tc === D.base;
+  $('#ed-rate-label').textContent = `Exchange rate (1 ${D.base} = … ${from.tc})`;
+  if (rateInput.dataset.cur !== from.tc) { // refill only when the currency changes, so a typed rate is kept
+    rateInput.dataset.cur = from.tc;
+    rateInput.value = String(Math.round(from.rate * 1e4) / 1e4);
+    const own = F && F.acc === accId;
+    $('#ed-rate-note').textContent = own ? 'Rate saved with this transaction.' : liveRates ? 'Today\'s market rate.' : 'Rate saved on the account (today\'s rate is unavailable).';
+  }
 }
 
 function saveEditor() {
@@ -587,7 +612,13 @@ function saveEditor() {
   const item = itemId(itemName);
   let ids;
   if (type !== 5) {
-    const { tc, rate } = curFor(F, accId);
+    const { tc, rate: exact } = curFor(F, accId);
+    let rate = 1;
+    if (tc !== D.base) {
+      rate = num($('#ed-rate').value);
+      if (!(rate > 0)) return err('Enter an exchange rate greater than 0.');
+      if (Math.abs(rate - exact) < 5e-5) rate = exact; // field shows 4 decimals; keep the full stored rate when it wasn't changed
+    }
     const sign = F && F.type === type ? (Math.sign(F.amount) || -1) : (type === 3 ? -1 : 1); // keeps refunds positive when edited
     const r = { item, amount: Math.round(sign * amt / rate * 1e6), tc, rate, date, type, cat: +$('#ed-cat').value, acc: accId, notes, pair: accId };
     if (F) { updateTx(F.id, r); ids = [F.id]; }
