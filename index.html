@@ -51,12 +51,6 @@ select, input, textarea { background: var(--surface); border: 1px solid var(--li
 .drop { margin-top: 32px; border: 2px dashed var(--line); border-radius: 14px; padding: 32px 24px; display: grid; gap: 14px; justify-items: center; text-align: center }
 .drop.over { border-color: var(--accent); background: var(--accent-soft) }
 .drop p { max-width: 56ch; margin: 0 }
-.setup { width: 100%; max-width: 640px; text-align: left; border-top: 1px solid var(--line); padding-top: 14px }
-.setup summary { cursor: pointer; font-weight: 500 }
-.setup ol { padding-left: 1.2em; color: var(--muted); display: grid; gap: 4px }
-.setup code { background: var(--accent-soft); padding: 0 4px; border-radius: 4px; overflow-wrap: anywhere }
-.setup .row { display: flex; gap: 8px; flex-wrap: wrap }
-.setup .row input { flex: 1 1 260px }
 .err { color: var(--neg) }
 
 .tabs { display: flex; gap: 4px; margin-block: 16px; border-bottom: 1px solid var(--line) }
@@ -143,20 +137,6 @@ dialog::backdrop { background: rgb(0 0 0 / .4) }
       <label class="btn" for="file">Open file</label>
       <input id="file" type="file" accept=".fydb" hidden>
     </div>
-    <details class="setup" id="setup">
-      <summary>Google Drive access setup (one time)</summary>
-      <ol>
-        <li>Open <a href="https://console.cloud.google.com/" target="_blank" rel="noopener">Google Cloud Console</a> and create a project.</li>
-        <li>In <b>APIs &amp; Services → Library</b>, enable <b>Google Drive API</b>.</li>
-        <li>Open <b>Google Auth Platform</b> (formerly OAuth consent screen), choose Get started, pick audience External, then under <b>Audience → Test users</b> add your Gmail address.</li>
-        <li>In <b>Clients</b>, create a client of type Web application. Under Authorized JavaScript origins add <code id="origin"></code>, and under Authorized redirect URIs add <code id="redirect"></code>.</li>
-        <li>Paste the client ID below.</li>
-      </ol>
-      <div class="row">
-        <input id="client-id" placeholder="1234567890-abc.apps.googleusercontent.com" aria-label="Google OAuth client ID">
-        <button id="client-save" type="button">Save</button>
-      </div>
-    </details>
   </section>
 
   <div id="app" hidden>
@@ -234,16 +214,18 @@ dialog::backdrop { background: rgb(0 0 0 / .4) }
 </dialog>
 <datalist id="items"></datalist>
 
-<script src="https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.8.0/sql-asm.js"></script>
+<!-- integrity: the browser refuses this file if the CDN copy is ever altered (it sees all your data) -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.8.0/sql-asm.js" integrity="sha512-rmkykIfjko0kedpism7nBHHSJKyB9/Ake2ihqff5QpUSVy3fy5Da7U5chQKtzXGAXEmNqrQ25t+NJIlFh3LoNg==" crossorigin="anonymous"></script>
 <script src="https://apis.google.com/js/api.js"></script>
-<script src="reports.js?v=5"></script>
-<script src="tools.js?v=3"></script><!-- bump ?v= when reports change, so browsers don't keep the old copy -->
+<!-- bump ?v= on reports.css/js and tools.js when they change, so browsers don't keep the old copy -->
+<script src="reports.js?v=6"></script>
+<script src="tools.js?v=4"></script>
 <script>
 const $ = s => document.querySelector(s);
 const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 const SQLp = initSqlJs();
 // Public OAuth client ID (not a secret); only the test users listed in Google Cloud can sign in with it.
-const DEFAULT_CLIENT_ID = '351651997955-eopu08nr15mu2o1jn3cqvn2lqn8h388s.apps.googleusercontent.com';
+const CLIENT_ID ='351651997955-eopu08nr15mu2o1jn3cqvn2lqn8h388s.apps.googleusercontent.com';
 // Google Picker: the API key is public by design (locked to this site in Google Cloud); APP_ID is the Cloud project number.
 const PICKER_API_KEY = 'AIzaSyALsvBnjhJwl-0BFdvScPNm67rCXl-KTwk', APP_ID = '351651997955';
 const API = 'https://www.googleapis.com/drive/v3/files', UPLOAD = 'https://www.googleapis.com/upload/drive/v3/files';
@@ -275,8 +257,12 @@ function money(n, cur) {
 }
 const hue = s => [...s].reduce((h, c) => (h * 31 + c.codePointAt(0)) % 360, 7); // stable color per tag
 const cls = n => n > 0.004 ? 'pos' : n < -0.004 ? 'neg' : '';
-const monthName = (ym, style = 'long') => new Date(ym + '-01T00:00:00').toLocaleDateString(undefined, { month: style, year: style === 'long' ? 'numeric' : '2-digit' });
-const num = s => parseFloat(String(s).replace(/\s/g, '').replace(',', '.'));
+// style: 'long' = "October 2026", 'short' = "Oct 26" (chart axes), 'shortYear' = "Oct 2026"
+const monthName = (ym, style = 'long') => new Date(ym + '-01T00:00:00').toLocaleDateString(undefined,
+  { month: style === 'long' ? 'long' : 'short', year: style === 'short' ? '2-digit' : 'numeric' });
+// The last "," or "." is the decimal mark, earlier ones group thousands: "1 250,50", "1,250.50" and "1.250,50" all mean 1250.5
+const num = s => { s = String(s).replace(/\s/g, ''); const d = Math.max(s.lastIndexOf(','), s.lastIndexOf('.'));
+  return parseFloat(d < 0 ? s : s.slice(0, d).replace(/[.,]/g, '') + '.' + s.slice(d + 1)); };
 function notice(msg, isErr) { const n = $('#notice'); n.textContent = msg; n.className = 'notice' + (isErr ? ' err' : ''); n.hidden = !msg; }
 
 // ---------- reading the database ----------
@@ -395,8 +381,7 @@ function showTransactions({ month = '', type = '', acc = '', search = '', parent
 }
 function catFilterLabel(f) {
   const cat = f.parent ? esc(f.parent) + (f.child && f.child !== f.parent ? ' › ' + esc(f.child) : '') : '';
-  const mon = m => new Date(m + '-01T00:00:00').toLocaleDateString(undefined, { month: 'short', year: 'numeric' });
-  return [cat, f.from ? `${mon(f.from)} – ${mon(f.to)}` : ''].filter(Boolean).join(' · ');
+  return [cat, f.from ? `${monthName(f.from, 'shortYear')} – ${monthName(f.to, 'shortYear')}` : ''].filter(Boolean).join(' · ');
 }
 
 function filtered() {
@@ -450,7 +435,6 @@ function updateMeta() {
 }
 
 function renderAll() {
-  const latest = D.list[0]?.date.slice(0, 10) || '—';
   updateMeta();
   const rates = [...new Set(D.accounts.filter(a => a.cur !== D.base).map(a => a.cur))]
     .map(c => `${c} ${D.accounts.find(a => a.cur === c).rate.toFixed(2)}`).join(', ');
@@ -590,7 +574,7 @@ function saveEditor() {
   const err = m => { $('#ed-err').textContent = m; $('#ed-err').hidden = false; };
   const type = edType(), amt = num($('#ed-amount').value), accId = +$('#ed-acc').value, date = toDbDate($('#ed-date').value);
   const itemName = $('#ed-item').value.trim(), notes = $('#ed-notes').value.trim();
-  const labels = [...new Set($('#ed-labels').value.split(',').map(s => s.trim()).filter(Boolean))];
+  const labels = edLabels();
   if (!(amt > 0)) return err('Enter an amount greater than 0.');
   if (!/^\d{4}-\d\d-\d\d \d\d:\d\d:\d\d$/.test(date)) return err('Enter a date and time.');
   if (!itemName) return err('Enter a payee.');
@@ -695,7 +679,7 @@ async function saveCopy() {
 // Sign-in redirects this page to Google and back (OAuth implicit flow), so popup blockers can't interfere.
 // The token lives in sessionStorage for this tab; unsaved edits are parked in IndexedDB across the redirect.
 const redirectUri = () => location.origin + location.pathname.replace(/index\.html$/, '');
-let token = null, tokenExp = 0;
+let token = null, tokenExp = 0, leaving = false;
 try { const s = JSON.parse(sessionStorage.getItem('bcw-token') || 'null'); if (s && s.exp > Date.now()) { token = s.token; tokenExp = s.exp; } } catch {}
 
 async function getToken(action) {
@@ -704,8 +688,9 @@ async function getToken(action) {
   const state = action + ':' + crypto.randomUUID();
   sessionStorage.setItem('bcw-state', state);
   notice('Opening Google sign-in…');
+  leaving = true; // edits are parked above, so skip the "Leave site?" prompt
   location.assign('https://accounts.google.com/o/oauth2/v2/auth?' + new URLSearchParams({
-    client_id: store.get('bcw-client-id') || DEFAULT_CLIENT_ID, redirect_uri: redirectUri(), response_type: 'token',
+    client_id: CLIENT_ID, redirect_uri: redirectUri(), response_type: 'token',
     scope: 'https://www.googleapis.com/auth/drive.file', state }));
   return new Promise(() => {}); // the page is navigating away
 }
@@ -775,7 +760,7 @@ function pickFiles() {
             if (where) store.set('bcw-folder-hint', where);
             res();
           }
-          else if (d.action === google.picker.Action.CANCEL) rej(new Error('No files were picked. Choose Open from Google Drive and pick bluecoins.fydb and tracker_file.'));
+          else if (d.action === google.picker.Action.CANCEL) rej(new Error('Nothing was picked. Choose Open from Google Drive and pick the QuickSync folder (Bluecoins › QuickSync).'));
         })
         .build().setVisible(true);
     });
@@ -812,9 +797,11 @@ async function driveUpload() {
   try {
     await getToken('upload');
     notice('Checking Google Drive…');
-    const now = await (await gfetch(`${API}/${drive.db.id}?fields=modifiedTime`)).json();
-    if (now.modifiedTime !== drive.db.modifiedTime)
+    // Look the files up again rather than trusting the old id: if Bluecoins replaced or changed them since we opened, stop.
+    const now = await findSyncFiles();
+    if (!now || now.db.id !== drive.db.id || now.db.modifiedTime !== drive.db.modifiedTime)
       throw new Error('Bluecoins changed the data in Google Drive after you opened it, so nothing was uploaded. Choose Reload from Drive and make your edits again.');
+    drive.tracker = now.tracker;
     const stamp = new Date().toISOString().slice(0, 16).replace(/[-:T]/g, '');
     await gfetch(`${API}/${drive.db.id}/copy`, { method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ name: `bluecoins-web-backup-${stamp}.fydb`, parents: ['root'] }) });
@@ -868,10 +855,6 @@ $('#upload').addEventListener('click', driveUpload);
 $('#drive-open').addEventListener('click', driveOpen);
 $('#drive-reload').addEventListener('click', () => driveOpen());
 $('#drive-repick').addEventListener('click', () => driveOpen(true));
-$('#origin').textContent = location.origin;
-$('#redirect').textContent = redirectUri();
-$('#client-id').value = store.get('bcw-client-id') || DEFAULT_CLIENT_ID;
-$('#client-save').addEventListener('click', () => { store.set('bcw-client-id', $('#client-id').value.trim()); token = null; notice('Saved. Now choose Open from Google Drive.'); });
 $('#forget').addEventListener('click', async () => {
   if (dirty && !confirmDiscard()) return;
   try { await idb('readwrite', s => s.delete('last')); } catch {}
@@ -879,7 +862,7 @@ $('#forget').addEventListener('click', async () => {
   $('#app').hidden = true; $('#empty').hidden = false; updateSaveUI(); notice('');
   $('#meta').textContent = 'Web version of your Bluecoins data';
 });
-window.addEventListener('beforeunload', e => { if (dirty) { e.preventDefault(); e.returnValue = ''; } });
+window.addEventListener('beforeunload', e => { if (dirty && !leaving) { e.preventDefault(); e.returnValue = ''; } });
 for (const [ev, on] of [['dragover', true], ['dragleave', false], ['drop', false]])
   document.addEventListener(ev, e => { e.preventDefault(); $('#empty').classList.toggle('over', on); if (ev === 'drop') openFile(e.dataTransfer.files[0]); });
 
@@ -891,6 +874,6 @@ for (const [ev, on] of [['dragover', true], ['dragleave', false], ['drop', false
     if (token && Date.now() < tokenExp - 60000) return driveOpen();
     return notice('Choose Open from Google Drive to load your latest data.');
   }
-  try { const last = await idb('readonly', s => s.get('last')); if (last && !D) open(last.bytes, last.name, 'local'); } catch {}
+  try { const last = await idb('readonly', s => s.get('last')); if (last && !D) open(last.bytes, last.name, 'cached'); } catch {} // 'cached': already stored, don't write it again
 })();
 </script>

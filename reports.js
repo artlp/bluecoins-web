@@ -19,7 +19,7 @@
   const dayNum = s => Math.round(Date.UTC(+s.slice(0, 4), +s.slice(5, 7) - 1, +s.slice(8, 10)) / 864e5);
   const dayStr = n => new Date(n * 864e5).toISOString().slice(0, 10);
   const longDate = s => new Date(s + 'T00:00:00').toLocaleDateString(undefined, { weekday: 'short', day: 'numeric', month: 'long', year: 'numeric' });
-  const monYear = m => new Date(m + '-01T00:00:00').toLocaleDateString(undefined, { month: 'short', year: 'numeric' });
+  const monYear = m => monthName(m, 'shortYear');
   const rangeLabel = ([a, b]) => a === b ? monthName(a) : a.slice(5) === '01' && b.slice(5) === '12' && a.slice(0, 4) === b.slice(0, 4) ? a.slice(0, 4) : `${monYear(a)} – ${monYear(b)}`;
 
   const PERIODS = [['month', 'This month'], ['prev', 'Last month'], ['3m', 'Last 3 months'], ['ytd', 'This year'], ['lastyear', 'Last year'],
