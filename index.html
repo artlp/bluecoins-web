@@ -241,7 +241,8 @@ dialog::backdrop { background: rgb(0 0 0 / .4) }
 <datalist id="items"></datalist>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.8.0/sql-asm.js"></script>
-<script src="https://accounts.google.com/gsi/client" async></script>
+<!-- loaded before the app script (not async) so sign-in is ready on the first click -->
+<script src="https://accounts.google.com/gsi/client"></script>
 <script>
 const $ = s => document.querySelector(s);
 const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -646,7 +647,7 @@ function getToken() {
     if (token && Date.now() < tokenExp - 60000) return res(token);
     const clientId = store.get('bcw-client-id') || DEFAULT_CLIENT_ID;
     if (!clientId) { $('#setup').open = true; return rej(new Error('Set up Google Drive access first (see the steps below).')); }
-    if (!window.google?.accounts?.oauth2) return rej(new Error('Google sign-in did not load. Check your connection and reload the page.'));
+    if (!window.google?.accounts?.oauth2) return rej(new Error('Google sign-in did not load. An ad blocker or tracking protection (uBlock, AdGuard, Brave Shields, Firefox strict mode) is probably blocking accounts.google.com. Allow it for this site and reload the page.'));
     google.accounts.oauth2.initTokenClient({
       client_id: clientId, scope: 'https://www.googleapis.com/auth/drive',
       callback: r => { if (r.error) return rej(new Error(r.error_description || r.error)); token = r.access_token; tokenExp = Date.now() + r.expires_in * 1000; res(token); },
