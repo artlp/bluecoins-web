@@ -757,14 +757,19 @@ function pickFiles() {
     if (!PICKER_API_KEY) return rej(new Error('The Google file picker is not set up yet (missing API key).'));
     gapi.load('picker', () => {
       const view = new google.picker.DocsView(google.picker.ViewId.DOCS).setIncludeFolders(true).setSelectFolderEnabled(true).setMode(google.picker.DocsViewMode.LIST);
+      // Bluecoins keeps its sync files in "Bluecoins/QuickSync": open that folder if we've seen it, otherwise search for it.
+      const hint = store.get('bcw-folder-hint');
+      if (hint) view.setParent(hint); else view.setQuery('QuickSync');
       new google.picker.PickerBuilder()
-        .setTitle('Select the folder that holds bluecoins.fydb and tracker_file')
+        .setTitle('Select the QuickSync folder (Bluecoins › QuickSync)')
         .addView(view).enableFeature(google.picker.Feature.MULTISELECT_ENABLED)
         .setOAuthToken(token).setDeveloperKey(PICKER_API_KEY).setAppId(APP_ID)
         .setCallback(d => {
           if (d.action === google.picker.Action.PICKED) {
             const folder = d.docs.find(x => x.mimeType === 'application/vnd.google-apps.folder');
             store.set('bcw-folder', JSON.stringify(folder ? folder.id : null));
+            const where = folder ? folder.id : d.docs[0]?.parentId;
+            if (where) store.set('bcw-folder-hint', where);
             res();
           }
           else if (d.action === google.picker.Action.CANCEL) rej(new Error('No files were picked. Choose Open from Google Drive and pick bluecoins.fydb and tracker_file.'));
@@ -782,7 +787,7 @@ async function driveOpen(repick = false) {
     if (repick === true) { store.set('bcw-folder', 'null'); await pickFiles(); }
     let files = await findSyncFiles();
     if (!files) {
-      notice('Pick the Google Drive folder where Bluecoins keeps bluecoins.fydb and tracker_file.');
+      notice('Pick the QuickSync folder (Google Drive › Bluecoins › QuickSync). You only need to do this once.');
       await pickFiles();
       files = await findSyncFiles();
     }
@@ -792,6 +797,7 @@ async function driveOpen(repick = false) {
     }
     if (!files) throw new Error('Both files are needed: pick bluecoins.fydb and tracker_file from the same Bluecoins folder.');
     const { db, tracker } = files;
+    if (tracker.parents?.[0]) store.set('bcw-folder-hint', tracker.parents[0]); // so the picker opens right there next time
     const bytes = new Uint8Array(await (await gfetch(`${API}/${db.id}?alt=media`)).arrayBuffer());
     drive = { db, tracker };
     if (await open(bytes, `${db.name} (Google Drive)`, 'drive')) notice(`Opened ${db.name} from Google Drive, last changed ${new Date(db.modifiedTime).toLocaleString()}.`);
