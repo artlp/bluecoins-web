@@ -1,0 +1,4 @@
+# Publish only the page. Everything else here (bluecoins.fydb, tracker_file) is private financial data.
+*
+!.gitignore
+!index.html

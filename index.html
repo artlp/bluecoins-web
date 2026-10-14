@@ -1,0 +1,755 @@
+<!doctype html>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Bluecoins Web</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Golos+Text:wght@400;500;600&family=Unbounded:wght@500;700&display=swap">
+<style>
+/* Layout: one column ledger, sticky top bar, three tabs (accounts, transactions, reports), modal editor */
+:root {
+  --bg: #f3f6f7; --surface: #ffffff; --ink: #13212a; --muted: #5d6c76; --line: #dbe3e7;
+  --accent: #0a6a85; --accent-soft: #e1eff3; --pos: #1d7648; --neg: #b03636;
+  --display: "Unbounded", "Segoe UI", system-ui, sans-serif;
+  --body: "Golos Text", "Segoe UI", system-ui, -apple-system, sans-serif;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --bg: #0e1519; --surface: #151f25; --ink: #e2eaee; --muted: #8d9ea8; --line: #25333b;
+  --accent: #56b6d1; --accent-soft: #173039; --pos: #62c48f; --neg: #e57b7b; color-scheme: dark } }
+:root[data-theme="dark"] {
+  --bg: #0e1519; --surface: #151f25; --ink: #e2eaee; --muted: #8d9ea8; --line: #25333b;
+  --accent: #56b6d1; --accent-soft: #173039; --pos: #62c48f; --neg: #e57b7b; color-scheme: dark }
+
+* { box-sizing: border-box }
+[hidden] { display: none !important }
+body { background: var(--bg); color: var(--ink); font: 15px/1.45 var(--body); margin: 0; padding-inline: 16px; padding-block: 0 48px }
+.wrap { max-width: 960px; margin: 0 auto }
+h1, h2 { font-family: var(--display); font-weight: 500; text-wrap: balance; margin: 0 }
+h1 { font-size: 1.05rem; letter-spacing: .01em }
+h2 { font-size: .95rem }
+.muted { color: var(--muted) }
+.num { font-variant-numeric: tabular-nums; white-space: nowrap }
+.pos { color: var(--pos) } .neg { color: var(--neg) }
+button, .btn, select, input, textarea { font: inherit; color: inherit }
+.btn, button { background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 6px 12px; cursor: pointer }
+.btn.primary, button.primary { background: var(--accent); border-color: var(--accent); color: var(--surface) }
+button:disabled { opacity: .5; cursor: default }
+button.danger { color: var(--neg) }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px }
+select, input, textarea { background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 6px 10px; min-width: 0 }
+
+.top { position: sticky; top: env(safe-area-inset-top, 0px); z-index: 2; background: var(--bg); display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; padding-block: 14px; border-bottom: 1px solid var(--line) }
+.brand { display: flex; flex-direction: column; flex: 1 1 200px; min-width: 0 }
+.brand small { font-size: .8rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap }
+.actions { display: flex; flex-wrap: wrap; gap: 8px }
+.notice { margin: 12px 0 0; padding: 8px 12px; border-radius: 8px; background: var(--accent-soft) }
+.notice.err { color: var(--neg) }
+
+.drop { margin-top: 32px; border: 2px dashed var(--line); border-radius: 14px; padding: 32px 24px; display: grid; gap: 14px; justify-items: center; text-align: center }
+.drop.over { border-color: var(--accent); background: var(--accent-soft) }
+.drop p { max-width: 56ch; margin: 0 }
+.setup { width: 100%; max-width: 640px; text-align: left; border-top: 1px solid var(--line); padding-top: 14px }
+.setup summary { cursor: pointer; font-weight: 500 }
+.setup ol { padding-left: 1.2em; color: var(--muted); display: grid; gap: 4px }
+.setup code { background: var(--accent-soft); padding: 0 4px; border-radius: 4px; overflow-wrap: anywhere }
+.setup .row { display: flex; gap: 8px; flex-wrap: wrap }
+.setup .row input { flex: 1 1 260px }
+.err { color: var(--neg) }
+
+.tabs { display: flex; gap: 4px; margin-block: 16px; border-bottom: 1px solid var(--line) }
+.tabs button { border: 0; border-radius: 0; background: none; padding: 8px 12px; color: var(--muted); border-bottom: 2px solid transparent; margin-bottom: -1px }
+.tabs button[aria-selected=true] { color: var(--ink); border-bottom-color: var(--accent); font-weight: 600 }
+
+.net { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 24px; margin-bottom: 20px }
+.net .big { font-family: var(--display); font-size: clamp(1.6rem, 5vw, 2.2rem); font-weight: 500 }
+.label { font-size: .75rem; text-transform: uppercase; letter-spacing: .08em; color: var(--muted) }
+.group { margin-bottom: 24px }
+.group-head { display: flex; justify-content: space-between; gap: 12px; padding-block: 6px; border-bottom: 2px solid var(--ink) }
+.type-head { font-size: .75rem; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); padding-top: 12px }
+.acct, .tx { width: 100%; background: none; border: 0; border-bottom: 1px solid var(--line); border-radius: 0; text-align: left; cursor: pointer }
+.acct { display: grid; grid-template-columns: 1fr auto auto; gap: 4px 16px; align-items: baseline; padding: 8px 4px }
+.acct:hover, .tx:hover { background: var(--accent-soft) }
+.acct .conv { font-size: .85rem; min-width: 7ch; text-align: right }
+.toggle { display: inline-flex; gap: 6px; align-items: center; font-size: .9rem; color: var(--muted) }
+
+.filters { display: grid; grid-template-columns: 2fr 1.4fr 1fr 1fr auto; gap: 8px; margin-bottom: 12px }
+@media (max-width: 720px) { .filters { grid-template-columns: 1fr 1fr } .filters input[type=search] { grid-column: 1 / -1 } }
+.listbar { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 8px; font-size: .9rem }
+.day { font-size: .8rem; color: var(--muted); padding: 14px 4px 4px; border-bottom: 1px solid var(--line) }
+.tx { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 2px 12px; padding: 8px 4px }
+.tx .item { font-weight: 500; overflow-wrap: anywhere }
+.tx .sub { grid-column: 1; font-size: .85rem; color: var(--muted); display: flex; flex-wrap: wrap; gap: 4px 10px; min-width: 0 }
+.tx .note { grid-column: 1 / -1; font-size: .85rem; color: var(--muted); white-space: pre-line; overflow-wrap: anywhere }
+.tx .amt { text-align: right; font-weight: 500 }
+.tx .base { grid-column: 2; grid-row: 2; text-align: right; font-size: .8rem }
+.chip { background: var(--accent-soft); color: var(--accent); border-radius: 999px; padding: 0 8px; font-size: .78rem }
+.more { margin: 16px auto; display: block }
+
+.cards { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin-block: 16px 24px }
+@media (max-width: 560px) { .cards { grid-template-columns: 1fr } }
+.card { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px }
+.card .v { font-family: var(--display); font-size: 1.25rem; font-weight: 500 }
+.split { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 24px }
+@media (max-width: 720px) { .split { grid-template-columns: 1fr } }
+.bar-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 2px 12px; padding-block: 6px; font-size: .9rem }
+.bar { grid-column: 1 / -1; height: 6px; background: var(--accent-soft); border-radius: 3px; overflow: hidden }
+.bar i { display: block; height: 100%; background: var(--accent) }
+.bar.inc i { background: var(--pos) }
+.chart-box { overflow-x: auto; margin-top: 8px }
+.chart { display: grid; grid-template-columns: repeat(12, minmax(36px, 1fr)); gap: 6px; height: 180px; align-items: end; min-width: 480px; border-bottom: 1px solid var(--line) }
+.chart .col { display: flex; gap: 2px; align-items: end; height: 100%; justify-content: center }
+.chart .col span { width: 40%; max-width: 16px; border-radius: 3px 3px 0 0 }
+.chart .in { background: var(--pos) } .chart .out { background: var(--neg) }
+.chart .col.sel { background: var(--accent-soft); border-radius: 4px 4px 0 0 }
+.chart-labels { display: grid; grid-template-columns: repeat(12, minmax(36px, 1fr)); gap: 6px; min-width: 480px; font-size: .72rem; color: var(--muted); text-align: center; padding-top: 4px }
+.legend { display: flex; flex-wrap: wrap; gap: 14px; font-size: .8rem; color: var(--muted) }
+.legend b { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 4px; vertical-align: -1px }
+.foot { margin-top: 32px; font-size: .8rem }
+
+dialog { border: 1px solid var(--line); border-radius: 14px; background: var(--surface); color: var(--ink); padding: 0; width: min(560px, calc(100% - 32px)); max-height: calc(100% - 32px) }
+dialog::backdrop { background: rgb(0 0 0 / .4) }
+.ed { display: grid; gap: 12px; padding: 20px }
+.ed label { display: grid; gap: 4px; font-size: .85rem; color: var(--muted); min-width: 0 }
+.ed label > :is(input, select, textarea) { color: var(--ink); font-size: 15px; width: 100% }
+.ed .two { display: grid; grid-template-columns: 1fr 1fr; gap: 12px }
+@media (max-width: 480px) { .ed .two { grid-template-columns: 1fr } }
+.seg { display: flex; border: 1px solid var(--line); border-radius: 8px; overflow: hidden }
+.seg label { flex: 1; display: block; text-align: center; padding: 6px; cursor: pointer; color: var(--ink); font-size: .9rem }
+.seg input { position: absolute; opacity: 0 }
+.seg label:has(input:checked) { background: var(--accent); color: var(--surface) }
+.seg label:has(input:disabled) { opacity: .4; cursor: default }
+.seg label:has(input:focus-visible) { outline: 2px solid var(--accent); outline-offset: -2px }
+.label-picks { display: flex; flex-wrap: wrap; gap: 4px }
+.label-picks button { padding: 0 8px; font-size: .78rem; border-radius: 999px }
+.ed-actions { display: flex; gap: 8px; align-items: center }
+.ed-actions .grow { flex: 1 }
+</style>
+
+<div class="wrap">
+  <header class="top">
+    <div class="brand"><h1>Bluecoins Web</h1><small id="meta" class="muted">Web version of your Bluecoins data</small></div>
+    <div class="actions">
+      <button id="forget" type="button" hidden>Forget file</button>
+      <button id="savecopy" type="button" hidden>Save copy</button>
+      <button id="drive-reload" type="button" hidden>Reload from Drive</button>
+      <button id="upload" class="primary" type="button" hidden disabled>Upload to Drive</button>
+    </div>
+  </header>
+  <p id="notice" class="notice" hidden></p>
+
+  <section id="empty" class="drop">
+    <h2>Open your Bluecoins data</h2>
+    <p class="muted">Open it straight from Google Drive, or open a downloaded <b>.fydb</b> backup. The data is processed in this browser only.</p>
+    <div class="actions">
+      <button id="drive-open" class="primary" type="button">Open from Google Drive</button>
+      <label class="btn" for="file">Open file</label>
+      <input id="file" type="file" accept=".fydb" hidden>
+    </div>
+    <details class="setup" id="setup">
+      <summary>Google Drive access setup (one time)</summary>
+      <ol>
+        <li>Open <a href="https://console.cloud.google.com/" target="_blank" rel="noopener">Google Cloud Console</a> and create a project.</li>
+        <li>In <b>APIs &amp; Services → Library</b>, enable <b>Google Drive API</b>.</li>
+        <li>Open <b>Google Auth Platform</b> (formerly OAuth consent screen), choose Get started, pick audience External, then under <b>Audience → Test users</b> add your Gmail address.</li>
+        <li>In <b>Clients</b>, create a client of type Web application. Under Authorized JavaScript origins add <code id="origin"></code>.</li>
+        <li>Paste the client ID below.</li>
+      </ol>
+      <div class="row">
+        <input id="client-id" placeholder="1234567890-abc.apps.googleusercontent.com" aria-label="Google OAuth client ID">
+        <button id="client-save" type="button">Save</button>
+      </div>
+    </details>
+  </section>
+
+  <div id="app" hidden>
+    <nav class="tabs" role="tablist">
+      <button type="button" role="tab" data-tab="accounts" aria-selected="true">Accounts</button>
+      <button type="button" role="tab" data-tab="transactions" aria-selected="false">Transactions</button>
+      <button type="button" role="tab" data-tab="reports" aria-selected="false">Reports</button>
+    </nav>
+
+    <section id="tab-accounts">
+      <div class="net" id="net"></div>
+      <div id="groups"></div>
+      <label class="toggle"><input id="show-closed" type="checkbox"> Show hidden and empty accounts</label>
+    </section>
+
+    <section id="tab-transactions" hidden>
+      <div class="filters">
+        <input id="q" type="search" placeholder="Search payee, note, category, label" aria-label="Search">
+        <select id="f-acc" aria-label="Account"></select>
+        <select id="f-type" aria-label="Type">
+          <option value="">All types</option><option value="3">Expenses</option><option value="4">Income</option><option value="5">Transfers</option>
+        </select>
+        <input id="f-month" type="month" aria-label="Month">
+        <button id="clear" type="button">Clear</button>
+      </div>
+      <div class="listbar"><span id="summary" class="muted"></span><button id="add" class="primary" type="button">Add transaction</button></div>
+      <div id="list"></div>
+      <button id="more" class="more" type="button" hidden>Show more</button>
+    </section>
+
+    <section id="tab-reports" hidden>
+      <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap">
+        <label for="r-month" class="muted">Month</label>
+        <input id="r-month" type="month">
+      </div>
+      <div class="cards" id="r-cards"></div>
+      <div class="split">
+        <div><h2>Expenses by category</h2><div id="r-exp"></div></div>
+        <div><h2>Income by category</h2><div id="r-inc"></div></div>
+      </div>
+      <h2 style="margin-top:28px">Last 12 months</h2>
+      <div class="legend"><span><b style="background:var(--pos)"></b>Income</span><span><b style="background:var(--neg)"></b>Expenses</span><span id="r-max"></span></div>
+      <div class="chart-box"><div class="chart" id="r-chart"></div><div class="chart-labels" id="r-labels"></div></div>
+    </section>
+    <p class="foot muted" id="foot"></p>
+  </div>
+</div>
+
+<dialog id="ed">
+  <form class="ed" id="ed-form">
+    <h2 id="ed-title">Add transaction</h2>
+    <div class="seg" role="radiogroup" aria-label="Type">
+      <label><input type="radio" name="ed-type" value="3" checked> Expense</label>
+      <label><input type="radio" name="ed-type" value="4"> Income</label>
+      <label><input type="radio" name="ed-type" value="5"> Transfer</label>
+    </div>
+    <div class="two">
+      <label>Amount <span id="ed-cur"></span><input id="ed-amount" inputmode="decimal" autocomplete="off" required></label>
+      <label>Date<input id="ed-date" type="datetime-local" step="1" required></label>
+    </div>
+    <div class="two">
+      <label><span id="ed-acc-label">Account</span><select id="ed-acc"></select></label>
+      <label id="ed-to-wrap">To account<select id="ed-to"></select></label>
+      <label id="ed-cat-wrap">Category<select id="ed-cat"></select></label>
+    </div>
+    <label id="ed-recv-wrap">Amount received <span id="ed-to-cur"></span><input id="ed-recv" inputmode="decimal" autocomplete="off" placeholder="Leave empty to convert at the saved rate"></label>
+    <label>Payee<input id="ed-item" list="items" autocomplete="off" required></label>
+    <label>Labels<input id="ed-labels" autocomplete="off" placeholder="Comma separated"></label>
+    <div class="label-picks" id="ed-label-picks"></div>
+    <label>Notes<textarea id="ed-notes" rows="2"></textarea></label>
+    <p id="ed-err" class="err" hidden></p>
+    <div class="ed-actions">
+      <button id="ed-del" class="danger" type="button">Delete</button>
+      <span class="grow"></span>
+      <button id="ed-cancel" type="button">Cancel</button>
+      <button class="primary" type="submit">Save</button>
+    </div>
+  </form>
+</dialog>
+<datalist id="items"></datalist>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.8.0/sql-asm.js"></script>
+<script src="https://accounts.google.com/gsi/client" async></script>
+<script>
+const $ = s => document.querySelector(s);
+const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+const SQLp = initSqlJs();
+const API = 'https://www.googleapis.com/drive/v3/files', UPLOAD = 'https://www.googleapis.com/upload/drive/v3/files';
+let D = null, shown = 150, dirty = 0, drive = null, editing = null;
+
+// ---------- browser storage (last opened local file) ----------
+function idb(mode, fn) {
+  return new Promise((res, rej) => {
+    const r = indexedDB.open('bluecoins-web', 1);
+    r.onupgradeneeded = () => r.result.createObjectStore('f');
+    r.onerror = () => rej(r.error);
+    r.onsuccess = () => {
+      const tx = r.result.transaction('f', mode), q = fn(tx.objectStore('f'));
+      tx.oncomplete = () => res(q && q.result);
+      tx.onerror = () => rej(tx.error);
+    };
+  });
+}
+const store = { get: k => { try { return localStorage.getItem(k) } catch { return null } }, set: (k, v) => { try { localStorage.setItem(k, v) } catch {} } };
+
+// ---------- formatting ----------
+const fmts = {};
+function money(n, cur) {
+  if (!fmts[cur]) {
+    try { fmts[cur] = new Intl.NumberFormat(undefined, { style: 'currency', currency: cur, minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
+    catch { fmts[cur] = { format: v => v.toFixed(2) + ' ' + cur }; }
+  }
+  return fmts[cur].format(Math.abs(n) < 0.005 ? 0 : n);
+}
+const cls = n => n > 0.004 ? 'pos' : n < -0.004 ? 'neg' : '';
+const monthName = (ym, style = 'long') => new Date(ym + '-01T00:00:00').toLocaleDateString(undefined, { month: style, year: style === 'long' ? 'numeric' : '2-digit' });
+const num = s => parseFloat(String(s).replace(/\s/g, '').replace(',', '.'));
+function notice(msg, isErr) { const n = $('#notice'); n.textContent = msg; n.className = 'notice' + (isErr ? ' err' : ''); n.hidden = !msg; }
+
+// ---------- reading the database ----------
+function rows(sql, params) {
+  const r = D.db.exec(sql, params)[0];
+  return r ? r.values.map(v => Object.fromEntries(r.columns.map((c, i) => [c, v[i]]))) : [];
+}
+
+// Bluecoins stores amount x1,000,000 in the main currency; what was typed = amount * conversionRateNew in transactionCurrency.
+// deletedTransaction 5 = deleted, 6 = live. reminderTransaction 9 = scheduled, not happened yet.
+function derive() {
+  D.base = rows("select defaultSettings v from SETTINGSTABLE where settingsTableID = 1")[0]?.v || 'EUR';
+  D.types = Object.fromEntries(rows(`select t.accountTypeTableID id, t.accountTypeName name, g.accountGroupName grp
+    from ACCOUNTTYPETABLE t join ACCOUNTINGGROUPTABLE g on g.accountingGroupTableID = t.accountingGroupID`).map(t => [t.id, t]));
+  D.accounts = rows(`select accountsTableID id, accountName name, accountTypeID type, accountHidden hidden,
+    accountCurrency cur, accountConversionRateNew rate from ACCOUNTSTABLE where accountTypeID <> 0 order by accountName`);
+  D.acc = Object.fromEntries(D.accounts.map(a => [a.id, Object.assign(a, { bal: 0, rate: a.rate || 1 })]));
+  D.cats = rows(`select c.categoryTableID id, c.childCategoryName name, p.parentCategoryName parent, p.categoryGroupID grp
+    from CHILDCATEGORYTABLE c left join PARENTCATEGORYTABLE p on p.parentCategoryTableID = c.parentCategoryID order by p.parentCategoryName, c.childCategoryName`);
+  const cats = Object.fromEntries(D.cats.map(c => [c.id, c]));
+  D.items = rows("select itemName n from ITEMTABLE where itemAutoFillVisibility = 0 order by itemName").map(r => r.n);
+  const labels = {};
+  for (const l of rows("select transactionIDLabels id, labelName name from LABELSTABLE where transactionIDLabels is not null")) (labels[l.id] ||= []).push(l.name);
+  D.labelNames = rows("select labelName n, count(*) c from LABELSTABLE group by labelName order by c desc limit 20").map(r => r.n);
+  D.maxId = rows("select max(transactionsTableID) m from TRANSACTIONSTABLE")[0].m || 0;
+  D.all = rows(`select t.transactionsTableID id, t.amount / 1000000.0 amount, t.transactionCurrency tc, t.conversionRateNew rate, t.date,
+    t.transactionTypeID type, t.categoryID cat, t.accountID acc, t.accountPairID pair, t.uidPairID uid, t.accountReference ref, t.notes, t.status, i.itemName item
+    from TRANSACTIONSTABLE t left join ITEMTABLE i on i.itemTableID = t.itemID
+    where t.deletedTransaction <> 5 and t.reminderTransaction is null
+    order by t.date desc, t.transactionsTableID desc`);
+  D.byId = {};
+  for (const t of D.all) {
+    D.byId[t.id] = t;
+    t.rate = t.rate || 1;
+    t.native = t.amount * t.rate;
+    t.void = t.status === 3; // Bluecoins leaves status 3 out of balances (checked against the app's numbers)
+    const a = D.acc[t.acc];
+    // balance in the account's currency: exact when typed in that currency, otherwise converted at the account's current rate
+    if (a && !t.void) a.bal += t.tc === a.cur ? t.native : t.amount * a.rate;
+  }
+  D.list = D.all.filter(t => t.type >= 3 && t.type <= 5 && D.acc[t.acc]);
+  for (const t of D.list) {
+    const c = cats[t.cat];
+    t.labels = labels[t.id] || [];
+    t.catName = c ? (c.parent && c.parent !== c.name ? c.parent + ' › ' + c.name : c.name) : '';
+    t.parent = c ? c.parent || c.name : 'Other';
+    t.text = [t.item, t.notes, t.catName, ...t.labels].join(' ').toLowerCase();
+  }
+}
+
+async function open(bytes, name, source) {
+  notice('');
+  const SQL = await SQLp;
+  const prev = D;
+  try {
+    D = { db: new SQL.Database(bytes), name };
+    derive();
+  } catch (e) {
+    D?.db?.close(); D = prev;
+    notice(`Couldn't read “${name}” as a Bluecoins backup (${e.message}).`, true);
+    return false;
+  }
+  prev?.db?.close();
+  dirty = 0;
+  if (source !== 'drive') drive = null;
+  if (source === 'local') try { await idb('readwrite', s => s.put({ bytes, name, savedAt: Date.now() }, 'last')); } catch {}
+  $('#empty').hidden = true; $('#app').hidden = false;
+  $('#r-month').value = (D.list[0]?.date || '').slice(0, 7);
+  renderAll();
+  return true;
+}
+
+async function openFile(file) {
+  if (!file) return;
+  if (dirty && !confirmDiscard()) return;
+  open(new Uint8Array(await file.arrayBuffer()), file.name, 'local');
+}
+
+// ---------- accounts ----------
+function renderAccounts() {
+  const showAll = $('#show-closed').checked;
+  let net = 0; const groups = {}, totals = {};
+  for (const a of D.accounts) {
+    const t = D.types[a.type] || { name: 'Other', grp: 'Assets' };
+    a.baseBal = a.bal / a.rate; net += a.baseBal;
+    totals[t.grp] = (totals[t.grp] || 0) + a.baseBal; // totals include hidden accounts so they add up to net worth
+    if (!showAll && (a.hidden || Math.abs(a.bal) < 0.005)) continue;
+    ((groups[t.grp] ||= {})[t.name] ||= []).push(a);
+  }
+  const tot = g => totals[g] || 0;
+  $('#net').innerHTML = `<div><div class="label">Net worth</div><div class="big num ${cls(net)}">${money(net, D.base)}</div></div>` +
+    ['Assets', 'Liabilities'].map(g => `<div><div class="label">${g}</div><div class="num">${money(tot(g), D.base)}</div></div>`).join('');
+  $('#groups').innerHTML = Object.entries(groups).map(([g, byType]) => `
+    <div class="group">
+      <div class="group-head"><h2>${esc(g)}</h2><span class="num">${money(tot(g), D.base)}</span></div>
+      ${Object.entries(byType).map(([tn, as]) => `<div class="type-head">${esc(tn)}</div>` + as.map(a => `
+        <button class="acct" type="button" data-acc="${a.id}">
+          <span>${esc(a.name)}${a.hidden ? ' <span class="muted">(hidden)</span>' : ''}</span>
+          <span class="num conv muted">${a.cur !== D.base ? money(a.baseBal, D.base) : ''}</span>
+          <span class="num ${cls(a.bal)}">${money(a.bal, a.cur)}</span>
+        </button>`).join('')).join('')}
+    </div>`).join('');
+}
+
+// ---------- transactions ----------
+function filtered() {
+  const q = $('#q').value.trim().toLowerCase(), acc = $('#f-acc').value, type = $('#f-type').value, m = $('#f-month').value;
+  return D.list.filter(t => {
+    if (acc) { if (String(t.acc) !== acc) return false; }
+    else if (t.type === 5 && t.ref !== 1) return false; // a transfer is two rows; show the sending side once
+    if (type && String(t.type) !== type) return false;
+    if (m && !t.date.startsWith(m)) return false;
+    return !q || t.text.includes(q);
+  });
+}
+
+function renderTransactions() {
+  const list = filtered(), acc = $('#f-acc').value;
+  const sum = list.filter(t => (acc || t.type !== 5) && !t.void).reduce((s, t) => s + t.amount, 0);
+  $('#summary').innerHTML = `${list.length.toLocaleString()} transactions · net <span class="num ${cls(sum)}">${money(sum, D.base)}</span>`;
+  let day = '', html = '';
+  for (const t of list.slice(0, shown)) {
+    const d = t.date.slice(0, 10);
+    if (d !== day) { day = d; html += `<div class="day">${new Date(d + 'T00:00:00').toLocaleDateString(undefined, { weekday: 'short', day: 'numeric', month: 'long', year: 'numeric' })}</div>`; }
+    const a = D.acc[t.acc], other = D.acc[t.pair];
+    const where = t.type === 5 ? (t.ref === 1 ? `${esc(a.name)} → ${esc(other?.name)}` : `${esc(other?.name)} → ${esc(a.name)}`) : esc(a.name);
+    html += `<button type="button" class="tx" data-id="${t.id}">
+      <span class="item">${esc(t.item || t.catName || '—')}</span>
+      <span class="num amt ${cls(t.native)}">${money(t.native, t.tc)}</span>
+      <span class="sub">${t.void ? '<span class="chip">Not counted</span>' : ''}${t.type === 5 ? '<span class="chip">Transfer</span>' : t.catName ? `<span class="chip">${esc(t.catName)}</span>` : ''}<span>${where}</span>${t.labels.map(l => `<span>#${esc(l)}</span>`).join('')}</span>
+      ${t.tc !== D.base ? `<span class="num base muted">${money(t.amount, D.base)}</span>` : ''}
+      ${t.notes ? `<span class="note">${esc(t.notes)}</span>` : ''}
+    </button>`;
+  }
+  $('#list').innerHTML = html || '<p class="muted">No transactions match these filters.</p>';
+  $('#more').hidden = list.length <= shown;
+}
+
+// ---------- reports (main currency, at the rate saved with each transaction) ----------
+function renderReports() {
+  const m = $('#r-month').value; if (!m) return;
+  const inMonth = D.list.filter(t => t.type !== 5 && !t.void && t.date.startsWith(m));
+  const byParent = type => {
+    const g = {};
+    for (const t of inMonth) if (t.type === type) g[t.parent] = (g[t.parent] || 0) + t.amount;
+    return Object.entries(g).map(([k, v]) => [k, type === 3 ? -v : v]).filter(([, v]) => Math.abs(v) > 0.004).sort((x, y) => y[1] - x[1]);
+  };
+  const exp = byParent(3), inc = byParent(4);
+  const tExp = exp.reduce((s, [, v]) => s + v, 0), tInc = inc.reduce((s, [, v]) => s + v, 0);
+  $('#r-cards').innerHTML = [['Income', tInc, 'pos'], ['Expenses', tExp, 'neg'], ['Net', tInc - tExp, cls(tInc - tExp)]]
+    .map(([l, v, c]) => `<div class="card"><div class="label">${l} · ${monthName(m)}</div><div class="v num ${c}">${money(v, D.base)}</div></div>`).join('');
+  const bars = (list, total, kind) => list.length ? list.map(([k, v]) => `
+    <div class="bar-row"><span>${esc(k)}</span><span class="num">${money(v, D.base)} <span class="muted">${total ? Math.round(v / total * 100) : 0}%</span></span>
+    <div class="bar ${kind}"><i style="width:${Math.max(0, v / list[0][1] * 100)}%"></i></div></div>`).join('') : '<p class="muted">Nothing this month.</p>';
+  $('#r-exp').innerHTML = bars(exp, tExp, '');
+  $('#r-inc').innerHTML = bars(inc, tInc, 'inc');
+
+  const months = [], [y, mo] = m.split('-').map(Number);
+  for (let i = 11; i >= 0; i--) { const n = y * 12 + mo - 1 - i; months.push(`${Math.floor(n / 12)}-${String(n % 12 + 1).padStart(2, '0')}`); }
+  const tot = Object.fromEntries(months.map(k => [k, { i: 0, o: 0 }]));
+  for (const t of D.list) { const k = t.date.slice(0, 7); if (tot[k] && t.type !== 5 && !t.void) t.type === 4 ? tot[k].i += t.amount : tot[k].o -= t.amount; }
+  const max = Math.max(1, ...months.flatMap(k => [tot[k].i, tot[k].o]));
+  const h = v => Math.max(0, v / max * 100);
+  $('#r-max').textContent = `Tallest bar: ${money(max, D.base)}`;
+  $('#r-chart').innerHTML = months.map(k => `<div class="col${k === m ? ' sel' : ''}" title="${monthName(k)}: income ${money(tot[k].i, D.base)}, expenses ${money(tot[k].o, D.base)}">
+    <span class="in" style="height:${h(tot[k].i)}%"></span><span class="out" style="height:${h(tot[k].o)}%"></span></div>`).join('');
+  $('#r-labels').innerHTML = months.map(k => `<span>${monthName(k, 'short')}</span>`).join('');
+}
+
+function renderAll() {
+  const latest = D.list[0]?.date.slice(0, 10) || '—';
+  $('#meta').textContent = `${D.name} · ${D.list.length.toLocaleString()} transactions · latest ${latest}`;
+  const rates = [...new Set(D.accounts.filter(a => a.cur !== D.base).map(a => a.cur))]
+    .map(c => `${c} ${D.accounts.find(a => a.cur === c).rate.toFixed(2)}`).join(', ');
+  $('#foot').textContent = `Account totals in ${D.base} use the rates saved in Bluecoins (1 ${D.base} = ${rates}). Reports use the rate saved with each transaction. Scheduled reminders and deleted transactions are left out.`;
+  const keep = $('#f-acc').value;
+  $('#f-acc').innerHTML = '<option value="">All accounts</option>' +
+    D.accounts.map(a => `<option value="${a.id}">${esc(a.name)}${a.hidden ? ' (hidden)' : ''}</option>`).join('');
+  $('#f-acc').value = keep;
+  $('#items').innerHTML = D.items.map(n => `<option value="${esc(n)}">`).join('');
+  renderAccounts(); renderTransactions(); renderReports(); updateSaveUI();
+}
+
+function showTab(name) {
+  for (const b of document.querySelectorAll('[data-tab]')) b.setAttribute('aria-selected', b.dataset.tab === name);
+  for (const s of ['accounts', 'transactions', 'reports']) $('#tab-' + s).hidden = s !== name;
+  store.set('bcw-tab', name);
+}
+
+// ---------- editing ----------
+const toDbDate = v => v ? (v.length === 16 ? v + ':00' : v).replace('T', ' ') : '';
+const pad = n => String(n).padStart(2, '0');
+const nowLocal = () => { const d = new Date(); return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`; };
+const fmtInput = n => String(Math.round(Math.abs(n) * 100) / 100);
+const edType = () => +document.querySelector('input[name=ed-type]:checked').value;
+// Keep the currency and rate the row was typed in while it stays on the same account; otherwise use the account's own.
+const curFor = (row, accId) => row && row.acc === accId ? { tc: row.tc, rate: row.rate } : { tc: D.acc[accId].cur, rate: D.acc[accId].rate };
+
+function newId() { D.maxId = Math.max(Date.now(), D.maxId + 1); return D.maxId; }
+function itemId(name) {
+  const hit = rows("select itemTableID id from ITEMTABLE where itemName = ? limit 1", [name])[0];
+  if (hit) return hit.id;
+  D.db.run("insert into ITEMTABLE (itemName, itemAutoFillVisibility) values (?, 0)", [name]);
+  return rows("select last_insert_rowid() id")[0].id;
+}
+function insertTx(r) {
+  D.db.run(`insert into TRANSACTIONSTABLE (transactionsTableID, itemID, amount, transactionCurrency, conversionRateNew, date, transactionTypeID,
+    categoryID, accountID, notes, status, accountReference, accountPairID, uidPairID, deletedTransaction, newSplitTransactionID, transferGroupID, creditCardInstallment)
+    values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, 6, null, ?, 0)`,
+    [r.id, r.item, r.amount, r.tc, r.rate, r.date, r.type, r.cat, r.acc, r.notes, r.ref, r.pair, r.uid, r.group ?? null]);
+}
+function updateTx(id, r) {
+  D.db.run(`update TRANSACTIONSTABLE set itemID = ?, amount = ?, transactionCurrency = ?, conversionRateNew = ?, date = ?, transactionTypeID = ?,
+    categoryID = ?, accountID = ?, notes = ?, accountPairID = ? where transactionsTableID = ?`,
+    [r.item, r.amount, r.tc, r.rate, r.date, r.type, r.cat, r.acc, r.notes, r.pair, id]);
+}
+function setLabels(ids, labels) {
+  D.db.run(`delete from LABELSTABLE where transactionIDLabels in (${ids.map(Number).join(',')})`);
+  for (const id of ids) for (const l of labels) D.db.run("insert into LABELSTABLE (labelName, transactionIDLabels) values (?, ?)", [l, id]);
+}
+
+function pairOf(t) {
+  if (!t) return null;
+  if (t.type !== 5) return { F: t };
+  const o = D.byId[t.uid];
+  return t.ref === 1 ? { F: t, T: o } : { F: o || t, T: o ? t : undefined };
+}
+
+function openEditor(t) {
+  editing = pairOf(t);
+  const F = editing?.F, T = editing?.T;
+  $('#ed-title').textContent = t ? 'Edit transaction' : 'Add transaction';
+  $('#ed-err').hidden = true;
+  const del = $('#ed-del'); del.hidden = !t; del.textContent = 'Delete'; delete del.dataset.armed;
+  for (const r of document.querySelectorAll('input[name=ed-type]')) {
+    r.checked = +r.value === (F?.type || 3);
+    r.disabled = !!t && (F.type === 5) !== (+r.value === 5); // switching to or from a transfer would change how many rows exist
+  }
+  const opts = keepId => D.accounts.filter(a => !a.hidden || a.id === keepId).map(a => `<option value="${a.id}">${esc(a.name)} (${a.cur})</option>`).join('');
+  const defAcc = F?.acc ?? (+$('#f-acc').value || D.list[0]?.acc || D.accounts[0].id);
+  $('#ed-acc').innerHTML = opts(defAcc); $('#ed-acc').value = defAcc;
+  const defTo = T?.acc ?? D.accounts.find(a => !a.hidden && a.id !== defAcc)?.id;
+  $('#ed-to').innerHTML = opts(defTo); $('#ed-to').value = defTo;
+  $('#ed-amount').value = F ? fmtInput(F.native) : '';
+  $('#ed-recv').value = T && T.tc !== F.tc ? fmtInput(T.native) : '';
+  $('#ed-date').value = F ? F.date.replace(' ', 'T') : nowLocal();
+  $('#ed-item').value = F?.item || '';
+  $('#ed-notes').value = F?.notes || '';
+  $('#ed-labels').value = (F?.labels || []).join(', ');
+  $('#ed-label-picks').innerHTML = D.labelNames.map(l => `<button type="button" data-label="${esc(l)}">${esc(l)}</button>`).join('');
+  fillCategories(F?.cat);
+  updateEditorUI();
+  $('#ed').showModal();
+}
+
+function fillCategories(selected) {
+  const grp = edType() === 4 ? 2 : 3, sel = $('#ed-cat'), keep = selected ?? +sel.value;
+  const groups = {};
+  for (const c of D.cats) if (c.grp === grp) (groups[c.parent || c.name] ||= []).push(c);
+  sel.innerHTML = Object.entries(groups).map(([p, cs]) => `<optgroup label="${esc(p)}">${cs.map(c => `<option value="${c.id}">${esc(c.name)}</option>`).join('')}</optgroup>`).join('');
+  if ([...sel.options].some(o => +o.value === keep)) sel.value = keep;
+}
+
+function updateEditorUI() {
+  const type = edType(), F = editing?.F, T = editing?.T;
+  const accId = +$('#ed-acc').value, toId = +$('#ed-to').value;
+  const from = curFor(F, accId), to = curFor(T, toId);
+  $('#ed-cur').textContent = `(${from.tc})`;
+  $('#ed-to-cur').textContent = `(${to.tc})`;
+  $('#ed-acc-label').textContent = type === 5 ? 'From account' : 'Account';
+  $('#ed-to-wrap').hidden = type !== 5;
+  $('#ed-cat-wrap').hidden = type === 5;
+  $('#ed-recv-wrap').hidden = type !== 5 || from.tc === to.tc;
+}
+
+function saveEditor() {
+  const err = m => { $('#ed-err').textContent = m; $('#ed-err').hidden = false; };
+  const type = edType(), amt = num($('#ed-amount').value), accId = +$('#ed-acc').value, date = toDbDate($('#ed-date').value);
+  const itemName = $('#ed-item').value.trim(), notes = $('#ed-notes').value.trim();
+  const labels = [...new Set($('#ed-labels').value.split(',').map(s => s.trim()).filter(Boolean))];
+  if (!(amt > 0)) return err('Enter an amount greater than 0.');
+  if (!/^\d{4}-\d\d-\d\d \d\d:\d\d:\d\d$/.test(date)) return err('Enter a date and time.');
+  if (!itemName) return err('Enter a payee.');
+  const F = editing?.F, T = editing?.T;
+  const item = itemId(itemName);
+  let ids;
+  if (type !== 5) {
+    const { tc, rate } = curFor(F, accId);
+    const sign = F && F.type === type ? (Math.sign(F.amount) || -1) : (type === 3 ? -1 : 1); // keeps refunds positive when edited
+    const r = { item, amount: Math.round(sign * amt / rate * 1e6), tc, rate, date, type, cat: +$('#ed-cat').value, acc: accId, notes, pair: accId };
+    if (F) { updateTx(F.id, r); ids = [F.id]; }
+    else { const id = newId(); insertTx({ ...r, id, ref: 1, uid: id }); ids = [id]; }
+  } else {
+    const toId = +$('#ed-to').value;
+    if (toId === accId) return err('Pick two different accounts.');
+    const from = curFor(F, accId), to = curFor(T, toId);
+    let base = amt / from.rate;
+    if (to.tc === from.tc) to.rate = from.rate;
+    else {
+      const recv = num($('#ed-recv').value);
+      if ($('#ed-recv').value.trim() && !(recv > 0)) return err('Enter the amount received, or leave it empty.');
+      if (recv > 0) { base = recv / to.rate; from.rate = amt / base; } // both rows share one main-currency amount; the sent side's rate absorbs the real exchange rate
+    }
+    const amount = Math.round(base * 1e6);
+    const common = { item, date, type: 5, cat: 3, notes };
+    const out = { ...common, amount: -amount, tc: from.tc, rate: from.rate, acc: accId, pair: toId };
+    const inn = { ...common, amount, tc: to.tc, rate: to.rate, acc: toId, pair: accId };
+    if (F && T) { updateTx(F.id, out); updateTx(T.id, inn); ids = [F.id, T.id]; }
+    else {
+      const id1 = newId(), id2 = newId();
+      insertTx({ ...out, id: id1, ref: 1, uid: id2, group: id1 });
+      insertTx({ ...inn, id: id2, ref: 2, uid: id1, group: id1 });
+      ids = [id1, id2];
+    }
+  }
+  setLabels(ids, labels);
+  afterChange(F ? 'Transaction updated.' : 'Transaction added.');
+}
+
+function deleteEditing() {
+  const ids = [editing.F?.id, editing.T?.id].filter(Boolean);
+  D.db.run(`update TRANSACTIONSTABLE set deletedTransaction = 5 where transactionsTableID in (${ids.map(Number).join(',')})`);
+  afterChange('Transaction deleted.');
+}
+
+function afterChange(msg) {
+  dirty++;
+  $('#ed').close();
+  derive(); renderAll();
+  notice(`${msg} ${drive ? 'Upload to Drive' : 'Save a copy'} to keep it.`);
+}
+
+// ---------- saving ----------
+function updateSaveUI() {
+  const has = !!D;
+  $('#upload').hidden = !(has && drive);
+  $('#upload').disabled = !dirty;
+  $('#upload').textContent = dirty ? `Upload to Drive (${dirty})` : 'Uploaded';
+  $('#drive-reload').hidden = !(has && drive);
+  $('#savecopy').hidden = !has || !!drive;
+  $('#forget').hidden = !has || !!drive;
+}
+const confirmDiscard = () => window.confirm(`You have ${dirty} change(s) that are not saved. Discard them?`);
+
+// Bluecoins sync: setting 7 in the database and tracking_id in tracker_file hold the same id; txn counts every row except reminders and type 1.
+function stampForSync() {
+  const id = Date.now();
+  D.db.run("update SETTINGSTABLE set defaultSettings = ? where settingsTableID = 7", [String(id)]);
+  const txn = rows("select count(*) n from TRANSACTIONSTABLE where reminderTransaction is null and transactionTypeID <> 1")[0].n;
+  return JSON.stringify([{ tracking_id: String(id) }, { txn: String(txn) }, { timestamp: String(Date.now()) }], null, 2);
+}
+
+function saveCopy() {
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([D.db.export()], { type: 'application/octet-stream' }));
+  a.download = D.name.endsWith('.fydb') ? D.name : 'bluecoins.fydb';
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+  dirty = 0; updateSaveUI(); notice('Saved a copy. Restore it in Bluecoins to see the changes there.');
+}
+
+// ---------- Google Drive ----------
+let token = null, tokenExp = 0;
+function getToken() {
+  return new Promise((res, rej) => {
+    if (token && Date.now() < tokenExp - 60000) return res(token);
+    const clientId = store.get('bcw-client-id');
+    if (!clientId) { $('#setup').open = true; return rej(new Error('Set up Google Drive access first (see the steps below).')); }
+    if (!window.google?.accounts?.oauth2) return rej(new Error('Google sign-in did not load. Check your connection and reload the page.'));
+    google.accounts.oauth2.initTokenClient({
+      client_id: clientId, scope: 'https://www.googleapis.com/auth/drive',
+      callback: r => { if (r.error) return rej(new Error(r.error_description || r.error)); token = r.access_token; tokenExp = Date.now() + r.expires_in * 1000; res(token); },
+      error_callback: e => rej(new Error(e.type === 'popup_closed' ? 'Google sign-in was closed.' : e.message || e.type)),
+    }).requestAccessToken({ prompt: token ? '' : undefined });
+  });
+}
+async function gfetch(url, opt = {}) {
+  const t = await getToken();
+  const r = await fetch(url, { ...opt, headers: { ...opt.headers, Authorization: 'Bearer ' + t } });
+  if (!r.ok) throw new Error(`Google Drive answered ${r.status}: ${(await r.text()).slice(0, 200)}`);
+  return r;
+}
+const gq = q => `${API}?q=${encodeURIComponent(q + ' and trashed = false')}&orderBy=modifiedTime desc&fields=files(id,name,modifiedTime,mimeType,parents)&pageSize=10`;
+
+async function driveOpen() {
+  if (dirty && !confirmDiscard()) return;
+  notice('Looking for your Bluecoins data in Google Drive…');
+  try {
+    await getToken();
+    const tracker = (await (await gfetch(gq("name = 'tracker_file'"))).json()).files[0];
+    if (!tracker) throw new Error('No tracker_file found in your Google Drive. Make sure Bluecoins sync to Google Drive is on.');
+    const db = (await (await gfetch(gq(`'${tracker.parents[0]}' in parents and name contains '.fydb'`))).json()).files[0];
+    if (!db) throw new Error('Found tracker_file, but no .fydb file next to it.');
+    const bytes = new Uint8Array(await (await gfetch(`${API}/${db.id}?alt=media`)).arrayBuffer());
+    drive = { db, tracker };
+    if (await open(bytes, `${db.name} (Google Drive)`, 'drive')) notice(`Opened ${db.name} from Google Drive, last changed ${new Date(db.modifiedTime).toLocaleString()}.`);
+  } catch (e) { notice(e.message, true); }
+}
+
+async function driveUpload() {
+  const btn = $('#upload'); btn.disabled = true;
+  try {
+    await getToken();
+    notice('Checking Google Drive…');
+    const now = await (await gfetch(`${API}/${drive.db.id}?fields=modifiedTime`)).json();
+    if (now.modifiedTime !== drive.db.modifiedTime)
+      throw new Error('Bluecoins changed the data in Google Drive after you opened it, so nothing was uploaded. Choose Reload from Drive and make your edits again.');
+    const stamp = new Date().toISOString().slice(0, 16).replace(/[-:T]/g, '');
+    await gfetch(`${API}/${drive.db.id}/copy`, { method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: `bluecoins-web-backup-${stamp}.fydb`, parents: ['root'] }) });
+    const trackerText = stampForSync();
+    notice('Uploading…');
+    const up = await (await gfetch(`${UPLOAD}/${drive.db.id}?uploadType=media&fields=modifiedTime`, {
+      method: 'PATCH', headers: { 'Content-Type': drive.db.mimeType || 'application/octet-stream' }, body: D.db.export() })).json();
+    drive.db.modifiedTime = up.modifiedTime;
+    await gfetch(`${UPLOAD}/${drive.tracker.id}?uploadType=media`, {
+      method: 'PATCH', headers: { 'Content-Type': drive.tracker.mimeType || 'application/octet-stream' }, body: trackerText });
+    dirty = 0;
+    notice(`Uploaded. The previous version was saved in My Drive as bluecoins-web-backup-${stamp}.fydb. Open Bluecoins and sync to get the changes.`);
+  } catch (e) { notice(e.message, true); }
+  updateSaveUI();
+}
+
+// ---------- events ----------
+$('#file').addEventListener('change', e => { openFile(e.target.files[0]); e.target.value = ''; });
+document.querySelector('.tabs').addEventListener('click', e => { const b = e.target.closest('[data-tab]'); if (b) showTab(b.dataset.tab); });
+$('#show-closed').addEventListener('change', renderAccounts);
+$('#groups').addEventListener('click', e => {
+  const b = e.target.closest('[data-acc]'); if (!b) return;
+  $('#f-acc').value = b.dataset.acc; $('#q').value = ''; $('#f-type').value = ''; $('#f-month').value = '';
+  shown = 150; renderTransactions(); showTab('transactions');
+});
+for (const id of ['#q', '#f-acc', '#f-type', '#f-month']) $(id).addEventListener('input', () => { shown = 150; renderTransactions(); });
+$('#clear').addEventListener('click', () => { for (const id of ['#q', '#f-acc', '#f-type', '#f-month']) $(id).value = ''; shown = 150; renderTransactions(); });
+$('#more').addEventListener('click', () => { shown += 300; renderTransactions(); });
+$('#r-month').addEventListener('input', renderReports);
+$('#list').addEventListener('click', e => { const b = e.target.closest('[data-id]'); if (b) openEditor(D.byId[b.dataset.id]); });
+$('#add').addEventListener('click', () => openEditor(null));
+for (const r of document.querySelectorAll('input[name=ed-type]')) r.addEventListener('change', () => { fillCategories(); updateEditorUI(); });
+$('#ed-acc').addEventListener('change', updateEditorUI);
+$('#ed-to').addEventListener('change', updateEditorUI);
+$('#ed-label-picks').addEventListener('click', e => {
+  const l = e.target.dataset.label; if (!l) return;
+  const cur = $('#ed-labels').value.split(',').map(s => s.trim()).filter(Boolean);
+  if (!cur.includes(l)) $('#ed-labels').value = [...cur, l].join(', ');
+});
+$('#ed-form').addEventListener('submit', e => { e.preventDefault(); saveEditor(); });
+$('#ed-cancel').addEventListener('click', () => $('#ed').close());
+$('#ed-del').addEventListener('click', e => {
+  const b = e.currentTarget;
+  if (!b.dataset.armed) { b.dataset.armed = '1'; b.textContent = 'Click again to delete'; return; }
+  deleteEditing();
+});
+$('#savecopy').addEventListener('click', saveCopy);
+$('#upload').addEventListener('click', driveUpload);
+$('#drive-open').addEventListener('click', driveOpen);
+$('#drive-reload').addEventListener('click', driveOpen);
+$('#origin').textContent = location.origin;
+$('#client-id').value = store.get('bcw-client-id') || '';
+$('#client-save').addEventListener('click', () => { store.set('bcw-client-id', $('#client-id').value.trim()); token = null; notice('Saved. Now choose Open from Google Drive.'); });
+$('#forget').addEventListener('click', async () => {
+  if (dirty && !confirmDiscard()) return;
+  try { await idb('readwrite', s => s.delete('last')); } catch {}
+  D?.db.close(); D = null; dirty = 0;
+  $('#app').hidden = true; $('#empty').hidden = false; updateSaveUI(); notice('');
+  $('#meta').textContent = 'Web version of your Bluecoins data';
+});
+window.addEventListener('beforeunload', e => { if (dirty) { e.preventDefault(); e.returnValue = ''; } });
+for (const [ev, on] of [['dragover', true], ['dragleave', false], ['drop', false]])
+  document.addEventListener(ev, e => { e.preventDefault(); $('#empty').classList.toggle('over', on); if (ev === 'drop') openFile(e.dataTransfer.files[0]); });
+
+// reopen the last local file this browser saw
+(async () => {
+  const t = store.get('bcw-tab'); if (t) showTab(t);
+  try { const last = await idb('readonly', s => s.get('last')); if (last && !D) open(last.bytes, last.name, 'local'); } catch {}
+})();
+</script>
