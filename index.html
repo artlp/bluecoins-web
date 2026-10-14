@@ -164,6 +164,7 @@ dialog::backdrop { background: rgb(0 0 0 / .4) }
       <button type="button" role="tab" data-tab="accounts" aria-selected="true">Accounts</button>
       <button type="button" role="tab" data-tab="transactions" aria-selected="false">Transactions</button>
       <button type="button" role="tab" data-tab="reports" aria-selected="false">Reports</button>
+      <button type="button" role="tab" data-tab="tools" aria-selected="false">Tools</button>
     </nav>
 
     <section id="tab-accounts">
@@ -188,6 +189,7 @@ dialog::backdrop { background: rgb(0 0 0 / .4) }
     </section>
 
     <section id="tab-reports" hidden><div id="reports"></div></section>
+    <section id="tab-tools" hidden><div id="tools"></div></section>
     <p class="foot muted" id="foot"></p>
   </div>
   <footer class="foot muted">
@@ -234,7 +236,8 @@ dialog::backdrop { background: rgb(0 0 0 / .4) }
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.8.0/sql-asm.js"></script>
 <script src="https://apis.google.com/js/api.js"></script>
-<script src="reports.js?v=5"></script><!-- bump ?v= when reports change, so browsers don't keep the old copy -->
+<script src="reports.js?v=5"></script>
+<script src="tools.js?v=3"></script><!-- bump ?v= when reports change, so browsers don't keep the old copy -->
 <script>
 const $ = s => document.querySelector(s);
 const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -457,12 +460,12 @@ function renderAll() {
     D.accounts.map(a => `<option value="${a.id}">${esc(a.name)}${a.hidden ? ' (hidden)' : ''}</option>`).join('');
   $('#f-acc').value = keep;
   $('#items').innerHTML = D.items.map(n => `<option value="${esc(n)}">`).join('');
-  renderAccounts(); renderTransactions(); renderReports(); updateSaveUI();
+  renderAccounts(); renderTransactions(); renderReports(); renderTools(); updateSaveUI();
 }
 
 function showTab(name) {
   for (const b of document.querySelectorAll('[data-tab]')) b.setAttribute('aria-selected', b.dataset.tab === name);
-  for (const s of ['accounts', 'transactions', 'reports']) $('#tab-' + s).hidden = s !== name;
+  for (const s of ['accounts', 'transactions', 'reports', 'tools']) $('#tab-' + s).hidden = s !== name;
   store.set('bcw-tab', name);
 }
 
