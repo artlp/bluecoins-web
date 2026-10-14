@@ -151,7 +151,7 @@ dialog::backdrop { background: rgb(0 0 0 / .4) }
         <li>Open <a href="https://console.cloud.google.com/" target="_blank" rel="noopener">Google Cloud Console</a> and create a project.</li>
         <li>In <b>APIs &amp; Services → Library</b>, enable <b>Google Drive API</b>.</li>
         <li>Open <b>Google Auth Platform</b> (formerly OAuth consent screen), choose Get started, pick audience External, then under <b>Audience → Test users</b> add your Gmail address.</li>
-        <li>In <b>Clients</b>, create a client of type Web application. Under Authorized JavaScript origins add <code id="origin"></code>.</li>
+        <li>In <b>Clients</b>, create a client of type Web application. Under Authorized JavaScript origins add <code id="origin"></code>, and under Authorized redirect URIs add <code id="redirect"></code>.</li>
         <li>Paste the client ID below.</li>
       </ol>
       <div class="row">
@@ -241,8 +241,6 @@ dialog::backdrop { background: rgb(0 0 0 / .4) }
 <datalist id="items"></datalist>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.8.0/sql-asm.js"></script>
-<!-- loaded before the app script (not async) so sign-in is ready on the first click -->
-<script src="https://accounts.google.com/gsi/client"></script>
 <script>
 const $ = s => document.querySelector(s);
 const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -641,23 +639,51 @@ function saveCopy() {
 }
 
 // ---------- Google Drive ----------
+// Sign-in redirects this page to Google and back (OAuth implicit flow), so popup blockers can't interfere.
+// The token lives in sessionStorage for this tab; unsaved edits are parked in IndexedDB across the redirect.
+const redirectUri = () => location.origin + location.pathname.replace(/index\.html$/, '');
 let token = null, tokenExp = 0;
-function getToken() {
-  return new Promise((res, rej) => {
-    if (token && Date.now() < tokenExp - 60000) return res(token);
-    const clientId = store.get('bcw-client-id') || DEFAULT_CLIENT_ID;
-    if (!clientId) { $('#setup').open = true; return rej(new Error('Set up Google Drive access first (see the steps below).')); }
-    if (!window.google?.accounts?.oauth2) return rej(new Error('Google sign-in did not load. An ad blocker or tracking protection (uBlock, AdGuard, Brave Shields, Firefox strict mode) is probably blocking accounts.google.com. Allow it for this site and reload the page.'));
-    google.accounts.oauth2.initTokenClient({
-      client_id: clientId, scope: 'https://www.googleapis.com/auth/drive',
-      callback: r => { if (r.error) return rej(new Error(r.error_description || r.error)); token = r.access_token; tokenExp = Date.now() + r.expires_in * 1000; res(token); },
-      error_callback: e => rej(new Error(e.type === 'popup_closed' ? 'Google sign-in was closed.' : e.message || e.type)),
-    }).requestAccessToken({ prompt: token ? '' : undefined });
-  });
+try { const s = JSON.parse(sessionStorage.getItem('bcw-token') || 'null'); if (s && s.exp > Date.now()) { token = s.token; tokenExp = s.exp; } } catch {}
+
+async function getToken(action) {
+  if (token && Date.now() < tokenExp - 60000) return token;
+  if (action === 'upload' && D) await idb('readwrite', s => s.put({ bytes: D.db.export(), name: D.name, drive, dirty }, 'pending'));
+  const state = action + ':' + crypto.randomUUID();
+  sessionStorage.setItem('bcw-state', state);
+  notice('Opening Google sign-in…');
+  location.assign('https://accounts.google.com/o/oauth2/v2/auth?' + new URLSearchParams({
+    client_id: store.get('bcw-client-id') || DEFAULT_CLIENT_ID, redirect_uri: redirectUri(), response_type: 'token',
+    scope: 'https://www.googleapis.com/auth/drive', include_granted_scopes: 'true', state }));
+  return new Promise(() => {}); // the page is navigating away
 }
+
+async function finishSignIn() {
+  const p = new URLSearchParams(location.hash.slice(1));
+  history.replaceState(null, '', location.pathname + location.search);
+  let expected = null;
+  try { expected = sessionStorage.getItem('bcw-state'); sessionStorage.removeItem('bcw-state'); } catch {}
+  if (!expected || p.get('state') !== expected) return notice('Google sign-in did not come from this page. Try again.', true);
+  if (p.get('error')) return notice(p.get('error') === 'access_denied' ? 'Access to Google Drive was not granted.' : `Google sign-in failed: ${p.get('error')}`, true);
+  token = p.get('access_token'); tokenExp = Date.now() + Number(p.get('expires_in')) * 1000;
+  try { sessionStorage.setItem('bcw-token', JSON.stringify({ token, exp: tokenExp })); } catch {}
+  const action = expected.split(':')[0];
+  let pending = null;
+  try { pending = await idb('readonly', s => s.get('pending')); await idb('readwrite', s => s.delete('pending')); } catch {}
+  if (action === 'upload' && pending) {
+    drive = pending.drive;
+    await open(pending.bytes, pending.name, 'drive');
+    dirty = pending.dirty; updateSaveUI();
+    return driveUpload();
+  }
+  return driveOpen();
+}
+
 async function gfetch(url, opt = {}) {
-  const t = await getToken();
-  const r = await fetch(url, { ...opt, headers: { ...opt.headers, Authorization: 'Bearer ' + t } });
+  const r = await fetch(url, { ...opt, headers: { ...opt.headers, Authorization: 'Bearer ' + token } });
+  if (r.status === 401) {
+    token = null; try { sessionStorage.removeItem('bcw-token'); } catch {}
+    throw new Error('Your Google sign-in expired. Click the button again to sign in.');
+  }
   if (!r.ok) throw new Error(`Google Drive answered ${r.status}: ${(await r.text()).slice(0, 200)}`);
   return r;
 }
@@ -665,9 +691,9 @@ const gq = q => `${API}?q=${encodeURIComponent(q + ' and trashed = false')}&orde
 
 async function driveOpen() {
   if (dirty && !confirmDiscard()) return;
-  notice('Looking for your Bluecoins data in Google Drive…');
   try {
-    await getToken();
+    await getToken('open');
+    notice('Looking for your Bluecoins data in Google Drive…');
     const tracker = (await (await gfetch(gq("name = 'tracker_file'"))).json()).files[0];
     if (!tracker) throw new Error('No tracker_file found in your Google Drive. Make sure Bluecoins sync to Google Drive is on.');
     const db = (await (await gfetch(gq(`'${tracker.parents[0]}' in parents and name contains '.fydb'`))).json()).files[0];
@@ -681,7 +707,7 @@ async function driveOpen() {
 async function driveUpload() {
   const btn = $('#upload'); btn.disabled = true;
   try {
-    await getToken();
+    await getToken('upload');
     notice('Checking Google Drive…');
     const now = await (await gfetch(`${API}/${drive.db.id}?fields=modifiedTime`)).json();
     if (now.modifiedTime !== drive.db.modifiedTime)
@@ -737,6 +763,7 @@ $('#upload').addEventListener('click', driveUpload);
 $('#drive-open').addEventListener('click', driveOpen);
 $('#drive-reload').addEventListener('click', driveOpen);
 $('#origin').textContent = location.origin;
+$('#redirect').textContent = redirectUri();
 $('#client-id').value = store.get('bcw-client-id') || DEFAULT_CLIENT_ID;
 $('#client-save').addEventListener('click', () => { store.set('bcw-client-id', $('#client-id').value.trim()); token = null; notice('Saved. Now choose Open from Google Drive.'); });
 $('#forget').addEventListener('click', async () => {
@@ -753,6 +780,7 @@ for (const [ev, on] of [['dragover', true], ['dragleave', false], ['drop', false
 // reopen the last local file this browser saw
 (async () => {
   const t = store.get('bcw-tab'); if (t) showTab(t);
+  if (/[#&](access_token|error)=/.test(location.hash)) return finishSignIn();
   try { const last = await idb('readonly', s => s.get('last')); if (last && !D) open(last.bytes, last.name, 'local'); } catch {}
 })();
 </script>
