@@ -111,6 +111,8 @@ dialog::backdrop { background: rgb(0 0 0 / .4) }
 .seg label:has(input:disabled) { opacity: .4; cursor: default }
 .seg label:has(input:focus-visible) { outline: 2px solid var(--accent); outline-offset: -2px }
 .label-picks { display: flex; flex-wrap: wrap; gap: 4px }
+.ed label.check { display: flex; align-items: center; gap: 8px; color: var(--ink); font-size: .9rem; cursor: pointer }
+.ed label.check > input { width: auto; margin: 0; accent-color: var(--accent) }
 .label-picks button { padding: 1px 9px; font-size: .78rem; border-radius: 999px; border: 1px solid var(--line); background: none; color: var(--muted) }
 .label-picks button[aria-pressed=true] { border-color: transparent; background: hsl(var(--h) var(--tag-s) var(--tag-bg)); color: hsl(var(--h) var(--tag-s) var(--tag-fg)); font-weight: 600 }
 .label-picks button[aria-pressed=true]::after { content: " ×"; font-weight: 400 }
@@ -216,6 +218,7 @@ dialog::backdrop { background: rgb(0 0 0 / .4) }
     <label>Labels<input id="ed-labels" autocomplete="off" placeholder="Comma separated"></label>
     <div class="label-picks" id="ed-label-picks"></div>
     <label>Notes<textarea id="ed-notes" rows="2"></textarea></label>
+    <label class="check"><input type="checkbox" id="ed-void"> Don't count in balances and reports (void)</label>
     <p id="ed-err" class="err" hidden></p>
     <div class="ed-actions">
       <button id="ed-del" class="danger" type="button">Delete</button>
@@ -462,13 +465,13 @@ function itemId(name) {
 function insertTx(r) {
   D.db.run(`insert into TRANSACTIONSTABLE (transactionsTableID, itemID, amount, transactionCurrency, conversionRateNew, date, transactionTypeID,
     categoryID, accountID, notes, status, accountReference, accountPairID, uidPairID, deletedTransaction, newSplitTransactionID, transferGroupID, creditCardInstallment)
-    values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, 6, null, ?, 0)`,
-    [r.id, r.item, r.amount, r.tc, r.rate, r.date, r.type, r.cat, r.acc, r.notes, r.ref, r.pair, r.uid, r.group ?? null]);
+    values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 6, null, ?, 0)`,
+    [r.id, r.item, r.amount, r.tc, r.rate, r.date, r.type, r.cat, r.acc, r.notes, r.status, r.ref, r.pair, r.uid, r.group ?? null]);
 }
 function updateTx(id, r) {
   D.db.run(`update TRANSACTIONSTABLE set itemID = ?, amount = ?, transactionCurrency = ?, conversionRateNew = ?, date = ?, transactionTypeID = ?,
-    categoryID = ?, accountID = ?, notes = ?, accountPairID = ? where transactionsTableID = ?`,
-    [r.item, r.amount, r.tc, r.rate, r.date, r.type, r.cat, r.acc, r.notes, r.pair, id]);
+    categoryID = ?, accountID = ?, notes = ?, accountPairID = ?, status = ? where transactionsTableID = ?`,
+    [r.item, r.amount, r.tc, r.rate, r.date, r.type, r.cat, r.acc, r.notes, r.pair, r.status, id]);
 }
 function setLabels(ids, labels) {
   D.db.run(`delete from LABELSTABLE where transactionIDLabels in (${ids.map(Number).join(',')})`);
@@ -503,6 +506,7 @@ function openEditor(t) {
   $('#ed-item').value = F?.item || '';
   $('#ed-notes').value = F?.notes || '';
   $('#ed-labels').value = (F?.labels || []).join(', ');
+  $('#ed-void').checked = !!F?.void;
   renderLabelPicks();
   fillCategories(F?.cat);
   delete $('#ed-rate').dataset.cur;
@@ -557,6 +561,8 @@ function saveEditor() {
   if (!/^\d{4}-\d\d-\d\d \d\d:\d\d:\d\d$/.test(date)) return err('Enter a date and time.');
   if (!itemName) return err('Enter a payee.');
   const F = editing?.F, T = editing?.T;
+  // status 3 = void (left out of balances); otherwise keep whatever status the app set (e.g. reconciled)
+  const status = $('#ed-void').checked ? 3 : F && F.status !== 3 ? F.status ?? 0 : 0;
   const item = itemId(itemName);
   let ids;
   if (type !== 5) {
@@ -568,7 +574,7 @@ function saveEditor() {
       if (Math.abs(rate - exact) < 5e-5) rate = exact; // field shows 4 decimals; keep the full stored rate when it wasn't changed
     }
     const sign = F && F.type === type ? (Math.sign(F.amount) || -1) : (type === 3 ? -1 : 1); // keeps refunds positive when edited
-    const r = { item, amount: Math.round(sign * amt / rate * 1e6), tc, rate, date, type, cat: +$('#ed-cat').value, acc: accId, notes, pair: accId };
+    const r = { item, amount: Math.round(sign * amt / rate * 1e6), tc, rate, date, type, cat: +$('#ed-cat').value, acc: accId, notes, pair: accId, status };
     if (F) { updateTx(F.id, r); ids = [F.id]; }
     else { const id = newId(); insertTx({ ...r, id, ref: 1, uid: id }); ids = [id]; }
   } else {
@@ -583,7 +589,7 @@ function saveEditor() {
       if (recv > 0) { base = recv / to.rate; from.rate = amt / base; } // both rows share one main-currency amount; the sent side's rate absorbs the real exchange rate
     }
     const amount = Math.round(base * 1e6);
-    const common = { item, date, type: 5, cat: 3, notes };
+    const common = { item, date, type: 5, cat: 3, notes, status };
     const out = { ...common, amount: -amount, tc: from.tc, rate: from.rate, acc: accId, pair: toId };
     const inn = { ...common, amount, tc: to.tc, rate: to.rate, acc: toId, pair: accId };
     if (F && T) { updateTx(F.id, out); updateTx(T.id, inn); ids = [F.id, T.id]; }
