@@ -121,7 +121,7 @@ dialog::backdrop { background: rgb(0 0 0 / .4) }
     <div class="actions">
       <button id="forget" type="button" hidden>Forget file</button>
       <button id="savecopy" type="button" hidden>Save for Drive</button>
-      <button id="drive-repick" type="button" hidden title="Choose the Bluecoins folder in Google Drive again">Pick Drive folder</button>
+      <button id="drive-repick" type="button" hidden title="Choose bluecoins.fydb and tracker_file in Google Drive again">Pick Drive files</button>
       <button id="drive-reload" type="button" hidden>Reload from Drive</button>
       <button id="upload" class="primary" type="button" hidden disabled>Upload to Drive</button>
     </div>
@@ -759,7 +759,7 @@ function pickFiles() {
       const hint = store.get('bcw-folder-hint');
       if (hint) view.setParent(hint); else view.setQuery('QuickSync');
       new google.picker.PickerBuilder()
-        .setTitle('Select the QuickSync folder (Bluecoins › QuickSync)')
+        .setTitle('In Bluecoins › QuickSync, select bluecoins.fydb and tracker_file (Ctrl+click both)')
         .addView(view).enableFeature(google.picker.Feature.MULTISELECT_ENABLED)
         .setOAuthToken(token).setDeveloperKey(PICKER_API_KEY).setAppId(APP_ID)
         .setCallback(d => {
@@ -770,7 +770,7 @@ function pickFiles() {
             if (where) store.set('bcw-folder-hint', where);
             res();
           }
-          else if (d.action === google.picker.Action.CANCEL) rej(new Error('Nothing was picked. Choose Open from Google Drive and pick the QuickSync folder (Bluecoins › QuickSync).'));
+          else if (d.action === google.picker.Action.CANCEL) rej(new Error('Nothing was picked. Choose Open from Google Drive and pick bluecoins.fydb and tracker_file (Bluecoins › QuickSync).'));
         })
         .build().setVisible(true);
     });
@@ -785,7 +785,7 @@ async function driveOpen(repick = false) {
     if (repick === true) { store.set('bcw-folder', 'null'); await pickFiles(); }
     let files = await findSyncFiles();
     if (!files) {
-      notice('Pick the QuickSync folder (Google Drive › Bluecoins › QuickSync). You only need to do this once.');
+      notice('Pick bluecoins.fydb and tracker_file in Google Drive › Bluecoins › QuickSync.');
       await pickFiles();
       files = await findSyncFiles();
     }
