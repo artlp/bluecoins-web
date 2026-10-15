@@ -680,10 +680,11 @@ async function saveCopy() {
 
 // ---------- Google Drive ----------
 // Sign-in redirects this page to Google and back (OAuth implicit flow), so popup blockers can't interfere.
-// The token lives in sessionStorage for this tab; unsaved edits are parked in IndexedDB across the redirect.
+// The token (valid ~1 hour) lives in localStorage; unsaved edits are parked in IndexedDB across the redirect.
+// action 'silent' asks Google with prompt=none: no screen if access was granted before, else an error comes back.
 const redirectUri = () => location.origin + location.pathname.replace(/index\.html$/, '');
 let token = null, tokenExp = 0, leaving = false;
-try { const s = JSON.parse(sessionStorage.getItem('bcw-token') || 'null'); if (s && s.exp > Date.now()) { token = s.token; tokenExp = s.exp; } } catch {}
+try { const s = JSON.parse(store.get('bcw-token') || 'null'); if (s && s.exp > Date.now()) { token = s.token; tokenExp = s.exp; } } catch {}
 
 async function getToken(action) {
   if (token && Date.now() < tokenExp - 60000) return token;
@@ -692,9 +693,11 @@ async function getToken(action) {
   sessionStorage.setItem('bcw-state', state);
   notice('Opening Google sign-in…');
   leaving = true; // edits are parked above, so skip the "Leave site?" prompt
+  const hint = store.get('bcw-email');
   location.assign('https://accounts.google.com/o/oauth2/v2/auth?' + new URLSearchParams({
     client_id: CLIENT_ID, redirect_uri: redirectUri(), response_type: 'token',
-    scope: 'https://www.googleapis.com/auth/drive.file', state }));
+    scope: 'https://www.googleapis.com/auth/drive.file', state,
+    ...(hint && { login_hint: hint }), ...(action === 'silent' && { prompt: 'none' }) }));
   return new Promise(() => {}); // the page is navigating away
 }
 
@@ -704,9 +707,13 @@ async function finishSignIn() {
   let expected = null;
   try { expected = sessionStorage.getItem('bcw-state'); sessionStorage.removeItem('bcw-state'); } catch {}
   if (!expected || p.get('state') !== expected) return notice('Google sign-in did not come from this page. Try again.', true);
+  if (p.get('error') && expected.startsWith('silent:')) return notice('Choose Open from Google Drive to load your latest data.');
   if (p.get('error')) return notice(p.get('error') === 'access_denied' ? 'Access to Google Drive was not granted.' : `Google sign-in failed: ${p.get('error')}`, true);
   token = p.get('access_token'); tokenExp = Date.now() + Number(p.get('expires_in')) * 1000;
-  try { sessionStorage.setItem('bcw-token', JSON.stringify({ token, exp: tokenExp })); } catch {}
+  store.set('bcw-token', JSON.stringify({ token, exp: tokenExp }));
+  // remembered as login_hint so silent sign-in works with several Google accounts signed in
+  gfetch('https://www.googleapis.com/drive/v3/about?fields=user(emailAddress)').then(r => r.json())
+    .then(a => a.user?.emailAddress && store.set('bcw-email', a.user.emailAddress)).catch(() => {});
   const action = expected.split(':')[0];
   let pending = null;
   try { pending = await idb('readonly', s => s.get('pending')); await idb('readwrite', s => s.delete('pending')); } catch {}
@@ -722,7 +729,7 @@ async function finishSignIn() {
 async function gfetch(url, opt = {}) {
   const r = await fetch(url, { ...opt, headers: { ...opt.headers, Authorization: 'Bearer ' + token } });
   if (r.status === 401) {
-    token = null; try { sessionStorage.removeItem('bcw-token'); } catch {}
+    token = null; try { localStorage.removeItem('bcw-token'); } catch {}
     throw new Error('Your Google sign-in expired. Click the button again to sign in.');
   }
   if (!r.ok) throw new Error(`Google Drive answered ${r.status}: ${(await r.text()).slice(0, 200)}`);
@@ -875,7 +882,7 @@ for (const [ev, on] of [['dragover', true], ['dragleave', false], ['drop', false
   if (/[#&](access_token|error)=/.test(location.hash)) return finishSignIn();
   if (store.get('bcw-source') === 'drive') {
     if (token && Date.now() < tokenExp - 60000) return driveOpen();
-    return notice('Choose Open from Google Drive to load your latest data.');
+    return getToken('silent');
   }
   try { const last = await idb('readonly', s => s.get('last')); if (last && !D) open(last.bytes, last.name, 'cached'); } catch {} // 'cached': already stored, don't write it again
 })();
