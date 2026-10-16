@@ -24,15 +24,17 @@ a { color: var(--accent) } .muted { color: var(--muted) }
     <li>backup copies of <code>bluecoins.fydb</code> that the app creates in your Drive before it saves changes.</li>
   </ul>
   <p>It cannot see or change any other file in your Google Drive. You can also use the app without Google Drive by opening a file from your device.</p>
+  <p>When you choose to connect Dropbox instead, the app asks for access to your Dropbox files. It uses it only to find the folder where Bluecoins keeps <code>tracker_file</code> and its <code>.fydb</code> file, read and update those two files, and save a backup copy of the <code>.fydb</code> file in a <b>Bluecoins Web backups</b> folder before each upload. You can remove the app's access at any time in Dropbox under Settings › Connected apps.</p>
 
   <h2>How the data is used</h2>
   <p>The files are downloaded into your browser, where the app shows your accounts, transactions and reports. When you add, edit or delete transactions and choose to upload, the app writes the updated files back to the same files in your Drive so the Bluecoins app can sync them. The data is used only to provide these features to you.</p>
 
   <h2>Where the data is stored</h2>
-  <p>Bluecoins Web has no server and no database of its own. Your financial data never leaves your browser except when it is uploaded back to your own Google Drive. In your browser the app keeps:</p>
+  <p>Bluecoins Web has no server and no database of its own. Your financial data never leaves your browser except when it is uploaded back to your own Google Drive or Dropbox. In your browser the app keeps:</p>
   <ul>
     <li>the last file you opened from your device, so it opens again next time (remove it with <b>Forget file</b> or by clearing site data);</li>
-    <li>the temporary Google sign-in token, which expires within an hour, and your Google account's email address, used only to tell Google which account to sign you back in with.</li>
+    <li>the temporary Google sign-in token, which expires within an hour, and your Google account's email address, used only to tell Google which account to sign you back in with;</li>
+    <li>if you connect Dropbox, the Dropbox sign-in tokens (one of them lasts until you remove the app's access, so you stay signed in on that browser) and the path of the Bluecoins folder in your Dropbox.</li>
   </ul>
 
   <h2>Exchange rates</h2>
